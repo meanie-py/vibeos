@@ -538,6 +538,18 @@ pub fn resolve_addr(
     mp: bool,
     reloc: Option<&str>,
 ) -> Option<String> {
+    resolve_addr_in(repo, arch, pc, mp, reloc, None)
+}
+/// `index`: a symbols tsv for a kernel image that is not this tree's build (an
+/// evidence dir's saved `ntkrnlmp.exe`); it replaces the `--mp` choice.
+fn resolve_addr_in(
+    repo: &Path,
+    arch: &str,
+    pc: &str,
+    mp: bool,
+    reloc: Option<&str>,
+    index: Option<&Path>,
+) -> Option<String> {
     let tool = repo.join("qemu/addr2sym.sh");
     if !tool.is_file() {
         return None;
@@ -547,7 +559,9 @@ pub fn resolve_addr(
     if let Some(r) = reloc.filter(|s| !s.is_empty()) {
         cmd.args(["--reloc", r]);
     }
-    if mp {
+    if let Some(i) = index {
+        cmd.arg("--index").arg(i);
+    } else if mp {
         cmd.arg("--mp");
     }
     cmd.arg(pc).current_dir(repo);
@@ -743,6 +757,142 @@ pub fn symbol_resolve(
         }
     )
 }
+/// Is `addr` in the kernel half of the address space? Such an address is never in
+/// the user-mode index, and resolving it there measured the distance from a user
+/// module's base (`ntkrnlmp.exe+0xfffff800000f8e5e`).
+pub fn is_kernel_va(arch: &str, addr: u64) -> bool {
+    if arch.starts_with("i386") {
+        addr >= 0x8000_0000
+    } else {
+        addr >= 0xffff_8000_0000_0000
+    }
+}
+pub fn is_kernel_module(name: &str) -> bool {
+    matches!(
+        name.to_ascii_lowercase().as_str(),
+        "ntoskrnl.exe" | "ntkrnlmp.exe"
+    )
+}
+/// Where the indexes for saved kernel images live: keyed by content, so a second
+/// lookup against the same evidence is free and a different binary never reuses one.
+fn image_index(
+    repo: &Path,
+    arch: &str,
+    image: &Path,
+) -> std::result::Result<std::path::PathBuf, String> {
+    let bytes =
+        fs::read(image).map_err(|e| format!("cannot read --image {}: {e}", image.display()))?;
+    let digest = format!("{:x}", Sha256::digest(&bytes));
+    let dir = std::env::temp_dir().join("vibeos-sym-index");
+    let out = dir.join(format!("{arch}-{}.tsv", &digest[..16]));
+    if out.is_file() {
+        return Ok(out);
+    }
+    fs::create_dir_all(&dir).map_err(|e| format!("cannot create {}: {e}", dir.display()))?;
+    let mut c = Command::new("bash");
+    c.arg(repo.join("qemu/build-index.sh"))
+        .args([arch, "--one"])
+        .arg(image)
+        .arg(&out)
+        .current_dir(repo);
+    let run = vibeos_build::process::capture(&mut c, 120).map_err(|e| e.to_string())?;
+    if run.code != 0 || !out.is_file() {
+        let _ = fs::remove_file(&out);
+        return Err(format!(
+            "indexing {} failed: {}",
+            image.display(),
+            run.stderr.trim()
+        ));
+    }
+    Ok(out)
+}
+/// Resolve a kernel address. The kernel is relocated at boot, so a runtime VA needs
+/// the base that boot printed (`[KRNLBASE]` in its serial log, or `--kernel-base`);
+/// without one this declines instead of guessing. `offset` means `addr` is an RVA
+/// (`ntkrnlmp.exe+0x12d10`, as a bugcheck prints it), which needs no base.
+#[allow(clippy::too_many_arguments)]
+pub fn kernel_resolve(
+    repo: &Path,
+    arch: &str,
+    addr: u64,
+    module: Option<&str>,
+    offset: bool,
+    serial: Option<&Path>,
+    kernel_base: Option<u64>,
+    image: Option<&Path>,
+) -> String {
+    let serial_text = match serial {
+        Some(p) => match fs::read(p) {
+            Ok(b) => Some(String::from_utf8_lossy(&b).into_owned()),
+            Err(e) => return format!("{addr:#x} -> (cannot read --serial {}: {e})", p.display()),
+        },
+        None => None,
+    };
+    let (pc, reloc) = if offset {
+        (PE_BASE.saturating_add(addr), None)
+    } else if let Some(b) = kernel_base {
+        let r = if b >= PE_BASE {
+            format!("{:#x}", b - PE_BASE)
+        } else {
+            format!("-0x{:x}", PE_BASE - b)
+        };
+        (addr, Some(r))
+    } else if let Some(t) = &serial_text {
+        if !arch.starts_with("i386") && !re(KERNEL_BASE).is_match(t) {
+            return format!(
+                "{addr:#x} -> (kernel address, but the --serial log has no [KRNLBASE] line; pass --kernel-base)"
+            );
+        }
+        (addr, kernel_relocation(arch, t))
+    } else if arch.starts_with("i386") {
+        (addr, kernel_relocation(arch, ""))
+    } else {
+        return format!(
+            "{addr:#x} -> (kernel address: the kernel is relocated at boot; pass --serial <that boot's serial log> or --kernel-base <its [KRNLBASE]>)"
+        );
+    };
+    let index = match image.map(|i| image_index(repo, arch, i)).transpose() {
+        Ok(i) => i,
+        Err(e) => return format!("{addr:#x} -> ({e})"),
+    };
+    let mp = module.is_some_and(|m| m.eq_ignore_ascii_case("ntkrnlmp.exe"))
+        || image.is_some_and(|i| {
+            i.to_string_lossy()
+                .to_ascii_lowercase()
+                .contains("ntkrnlmp")
+        })
+        || serial_text
+            .as_deref()
+            .is_some_and(|t| t.contains("ntkrnlmp.exe"));
+    let shown = if offset {
+        format!("{}+{addr:#x}", module.unwrap_or("kernel"))
+    } else {
+        format!("{addr:#x}")
+    };
+    let pc_text = format!("{pc:#x}");
+    match resolve_addr_in(repo, arch, &pc_text, mp, reloc.as_deref(), index.as_deref()) {
+        Some(line) => {
+            let image_name = if mp { "ntkrnlmp.exe" } else { "ntoskrnl.exe" };
+            let tail = line.split_once(" -> ").map_or(line.as_str(), |(_, t)| t);
+            // addr2sym prints `<file va>\t<symbol>+<decimal>\t<source>`.
+            let cols: Vec<_> = tail.split('\t').collect();
+            match cols.as_slice() {
+                [va, sym, src @ ..] if !sym.contains("<no symbol>") => {
+                    let (name, off) = sym.rsplit_once('+').unwrap_or((sym, "0"));
+                    let off = off.parse::<u64>().unwrap_or(0);
+                    let src = src.first().filter(|s| !s.is_empty() && **s != "-");
+                    format!(
+                        "{shown} -> {image_name}!{name}+{off:#x}  (file va 0x{}){}",
+                        va.trim_start_matches('0'),
+                        src.map(|s| format!("  {s}")).unwrap_or_default()
+                    )
+                }
+                _ => format!("{shown} -> {image_name} {tail}"),
+            }
+        }
+        None => format!("{shown} -> (kernel lookup failed: qemu/addr2sym.sh {arch} gave nothing)"),
+    }
+}
 pub fn resolve_in_module(repo: &Path, arch: &str, pc: &str, module: &str, rva: u64) -> String {
     let found = load_modules(repo, arch)
         .into_iter()
@@ -880,6 +1030,22 @@ pub fn dispatch(root: &Path, request: &Value) -> Result<Value> {
             opt_string(a, "want_module"),
             bool_arg(a, "offset")
         )),
+        "verdict_symbol_kernel_resolve" => json!(kernel_resolve(
+            root,
+            string(a, "arch")?,
+            a["addr"].as_u64().ok_or("missing address")?,
+            opt_string(a, "module"),
+            bool_arg(a, "offset"),
+            opt_string(a, "serial").map(Path::new),
+            opt_string(a, "kernel_base")
+                .map(|b| hex(b.trim_start_matches("0x")).ok_or("bad --kernel-base"))
+                .transpose()?,
+            opt_string(a, "image").map(Path::new)
+        )),
+        "verdict_symbol_is_kernel_va" => json!(is_kernel_va(
+            string(a, "arch")?,
+            a["addr"].as_u64().ok_or("missing address")?
+        )),
         "verdict_symbol_lookup" => json!(lookup_symbol(
             root,
             string(a, "arch")?,
@@ -1005,6 +1171,38 @@ mod tests {
         let resolved = symbolicate_pc(root.path(), "amd64", serial).unwrap();
         assert!(resolved.contains("ndis.sys!DriverFault+0x0"), "{resolved}");
         assert!(!resolved.contains("ntoskrnl"));
+    }
+    #[test]
+    fn sym_routes_kernel_addresses_and_declines_without_a_base() {
+        assert!(is_kernel_va("amd64", 0xfffff800004f8e5e));
+        assert!(!is_kernel_va("amd64", 0x7ffb70078fd));
+        assert!(is_kernel_va("i386", 0x80c31000));
+        assert!(!is_kernel_va("i386", 0x7c800000));
+        let root = tempfile::tempdir().unwrap();
+        let out = kernel_resolve(
+            root.path(),
+            "amd64",
+            0xfffff800004f8e5e,
+            None,
+            false,
+            None,
+            None,
+            None,
+        );
+        assert!(out.contains("pass --serial"), "{out}");
+        let log = root.path().join("serial.log");
+        fs::write(&log, "no base here\n").unwrap();
+        let out = kernel_resolve(
+            root.path(),
+            "amd64",
+            0xfffff800004f8e5e,
+            None,
+            false,
+            Some(&log),
+            None,
+            None,
+        );
+        assert!(out.contains("no [KRNLBASE] line"), "{out}");
     }
     #[test]
     fn kernel_symbolication_passes_relocation_and_mp_to_existing_authority() {

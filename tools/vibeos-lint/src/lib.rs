@@ -374,6 +374,7 @@ impl Corpus {
         serde_json::json!({"source_text_bytes": text_bytes, "additional_raw_bytes": raw_bytes, "line_index_capacity_bytes": line_bytes, "noise_bytes": noise_bytes, "rust_twin_payload_bytes": twin_bytes, "retained_rust_trees": tree_count, "retained_rust_tree_nodes": tree_nodes, "masked_view_bytes": views, "c_signature_fact_string_bytes": self.c_signature_facts.get().map_or(0, |all| all.values().filter_map(|v| v.as_ref().ok()).map(|facts| facts.string_bytes()).sum::<usize>()), "c_signature_json_input_bytes": self.c_signature_facts.get().map_or(0, |all| all.values().filter_map(|v| v.as_ref().ok()).map(|facts| facts.json_bytes).sum::<usize>()), "c_signature_arches": self.c_signature_facts.get().map_or(0, |asts| asts.len()), "syntax_cache": cache, "text_cache": self.text_cache.stats()})
     }
     pub fn new(root: PathBuf, mut files: Vec<SourceFile>) -> Self {
+        twins::set_root(&root);
         let syntax_cache = Arc::new(syntax_cache::Cache::new(syntax_cache::DEFAULT_NODE_LIMIT));
         let text_cache = Arc::new(text_cache::Cache::new(text_cache::DEFAULT_BYTE_LIMIT));
         for (index, file) in files.iter_mut().enumerate() {

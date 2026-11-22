@@ -1727,10 +1727,8 @@ pub unsafe extern "system" fn SetMessageExtraInfo(lParam: LPARAM) -> LPARAM {
 // ─────────────────────────────────────────────────────────────────────────────
 // IntCallWindowProcW / IntCallWindowProcA — the wndproc call path
 //
-// SEH (DUMMY_PSEH): every `_SEH2_EXCEPT` body in the C is just `ERR(...)` (no
-// output/result/return mutation), so under USE_DUMMY_PSEH those bodies are dead
-// code. Here the `_SEH2_TRY` body is reproduced as a plain statement; the
-// (dead) except body is dropped entirely (it only logged).
+// SEH: the C catches a faulting themed hook (Pre/Post WndProc and DefDlgProc) and a
+// faulting dialog procedure, logging each; ntdll_sys::seh::try_except_all does the same.
 // ─────────────────────────────────────────────────────────────────────────────
 
 #[cfg(target_arch = "x86")]
@@ -1810,24 +1808,33 @@ unsafe fn IntCallWindowProcW_impl(
             }
 
             if Hook != 0 && (MsgOverride != 0 || DlgOverride != 0) {
-                if DlgOverride == 0 {
-                    PreResult = guah.PreWndProc.unwrap()(
-                        AnsiMsg.hwnd,
-                        AnsiMsg.message,
-                        AnsiMsg.wParam,
-                        AnsiMsg.lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        &mut Data,
-                    );
-                } else {
-                    PreResult = guah.PreDefDlgProc.unwrap()(
-                        AnsiMsg.hwnd,
-                        AnsiMsg.message,
-                        AnsiMsg.wParam,
-                        AnsiMsg.lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        &mut Data,
-                    );
+                // A themed hook that faults is logged and skipped, as in the C.
+                let result_out = core::ptr::addr_of_mut!(Result) as ULONG_PTR;
+                let data: *mut DWORD = core::ptr::addr_of_mut!(Data);
+                if ntdll_sys::seh::try_except_all(|| {
+                    if DlgOverride == 0 {
+                        PreResult = guah.PreWndProc.unwrap()(
+                            AnsiMsg.hwnd,
+                            AnsiMsg.message,
+                            AnsiMsg.wParam,
+                            AnsiMsg.lParam,
+                            result_out,
+                            data,
+                        );
+                    } else {
+                        PreResult = guah.PreDefDlgProc.unwrap()(
+                            AnsiMsg.hwnd,
+                            AnsiMsg.message,
+                            AnsiMsg.wParam,
+                            AnsiMsg.lParam,
+                            result_out,
+                            data,
+                        );
+                    }
+                })
+                .is_err()
+                {
+                    ERR!("Got exception in hooked PreWndProc, dlg:%d!\n", DlgOverride);
                 }
             }
 
@@ -1835,33 +1842,52 @@ unsafe fn IntCallWindowProcW_impl(
                 break 'Exit;
             }
 
-            Result = CALL_EXTERN_WNDPROC(
-                WndProc,
-                AnsiMsg.hwnd,
-                AnsiMsg.message,
-                AnsiMsg.wParam,
-                AnsiMsg.lParam,
-            );
+            if Dialog == 0 {
+                Result = CALL_EXTERN_WNDPROC(WndProc, AnsiMsg.hwnd, AnsiMsg.message, AnsiMsg.wParam, AnsiMsg.lParam,);
+            } else {
+                // The C catches a faulting dialog procedure (only a dialog's) and logs it.
+                match ntdll_sys::seh::try_except_all(|| CALL_EXTERN_WNDPROC(WndProc, AnsiMsg.hwnd, AnsiMsg.message, AnsiMsg.wParam, AnsiMsg.lParam,)) {
+                    Ok(r) => Result = r,
+                    Err(_) => {
+                        ERR!(
+                            "Exception Dialog Ansi %p Msg %d pti %p Wndpti %p\n",
+                            WndProc.map_or(core::ptr::null(), |p| p as *const c_void),
+                            Msg,
+                            GetW32ThreadInfo(),
+                            wnd_pti(pWnd),
+                        );
+                    }
+                }
+            }
 
             if Hook != 0 && (MsgOverride != 0 || DlgOverride != 0) {
-                if DlgOverride == 0 {
-                    guah.PostWndProc.unwrap()(
-                        AnsiMsg.hwnd,
-                        AnsiMsg.message,
-                        AnsiMsg.wParam,
-                        AnsiMsg.lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        &mut Data,
-                    );
-                } else {
-                    guah.PostDefDlgProc.unwrap()(
-                        AnsiMsg.hwnd,
-                        AnsiMsg.message,
-                        AnsiMsg.wParam,
-                        AnsiMsg.lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        &mut Data,
-                    );
+                // A themed hook that faults is logged and skipped, as in the C.
+                let result_out = core::ptr::addr_of_mut!(Result) as ULONG_PTR;
+                let data: *mut DWORD = core::ptr::addr_of_mut!(Data);
+                if ntdll_sys::seh::try_except_all(|| {
+                    if DlgOverride == 0 {
+                        guah.PostWndProc.unwrap()(
+                            AnsiMsg.hwnd,
+                            AnsiMsg.message,
+                            AnsiMsg.wParam,
+                            AnsiMsg.lParam,
+                            result_out,
+                            data,
+                        );
+                    } else {
+                        guah.PostDefDlgProc.unwrap()(
+                            AnsiMsg.hwnd,
+                            AnsiMsg.message,
+                            AnsiMsg.wParam,
+                            AnsiMsg.lParam,
+                            result_out,
+                            data,
+                        );
+                    }
+                })
+                .is_err()
+                {
+                    ERR!("Got exception in hooked PostWndProc, dlg:%d!\n", DlgOverride);
                 }
             }
 
@@ -1870,24 +1896,33 @@ unsafe fn IntCallWindowProcW_impl(
             }
         } else {
             if Hook != 0 && (MsgOverride != 0 || DlgOverride != 0) {
-                if DlgOverride == 0 {
-                    PreResult = guah.PreWndProc.unwrap()(
-                        hWnd,
-                        Msg,
-                        wParam,
-                        lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        &mut Data,
-                    );
-                } else {
-                    PreResult = guah.PreDefDlgProc.unwrap()(
-                        hWnd,
-                        Msg,
-                        wParam,
-                        lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        &mut Data,
-                    );
+                // A themed hook that faults is logged and skipped, as in the C.
+                let result_out = core::ptr::addr_of_mut!(Result) as ULONG_PTR;
+                let data: *mut DWORD = core::ptr::addr_of_mut!(Data);
+                if ntdll_sys::seh::try_except_all(|| {
+                    if DlgOverride == 0 {
+                        PreResult = guah.PreWndProc.unwrap()(
+                            hWnd,
+                            Msg,
+                            wParam,
+                            lParam,
+                            result_out,
+                            data,
+                        );
+                    } else {
+                        PreResult = guah.PreDefDlgProc.unwrap()(
+                            hWnd,
+                            Msg,
+                            wParam,
+                            lParam,
+                            result_out,
+                            data,
+                        );
+                    }
+                })
+                .is_err()
+                {
+                    ERR!("Got exception in hooked PreWndProc, dlg:%d!\n", DlgOverride);
                 }
             }
 
@@ -1895,27 +1930,52 @@ unsafe fn IntCallWindowProcW_impl(
                 break 'Exit;
             }
 
-            Result = CALL_EXTERN_WNDPROC(WndProc, hWnd, Msg, wParam, lParam);
+            if Dialog == 0 {
+                Result = CALL_EXTERN_WNDPROC(WndProc, hWnd, Msg, wParam, lParam);
+            } else {
+                // The C catches a faulting dialog procedure (only a dialog's) and logs it.
+                match ntdll_sys::seh::try_except_all(|| CALL_EXTERN_WNDPROC(WndProc, hWnd, Msg, wParam, lParam)) {
+                    Ok(r) => Result = r,
+                    Err(_) => {
+                        ERR!(
+                            "Exception Dialog unicode %p Msg %d pti %p Wndpti %p\n",
+                            WndProc.map_or(core::ptr::null(), |p| p as *const c_void),
+                            Msg,
+                            GetW32ThreadInfo(),
+                            wnd_pti(pWnd),
+                        );
+                    }
+                }
+            }
 
             if Hook != 0 && (MsgOverride != 0 || DlgOverride != 0) {
-                if DlgOverride == 0 {
-                    guah.PostWndProc.unwrap()(
-                        hWnd,
-                        Msg,
-                        wParam,
-                        lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        &mut Data,
-                    );
-                } else {
-                    guah.PostDefDlgProc.unwrap()(
-                        hWnd,
-                        Msg,
-                        wParam,
-                        lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        &mut Data,
-                    );
+                // A themed hook that faults is logged and skipped, as in the C.
+                let result_out = core::ptr::addr_of_mut!(Result) as ULONG_PTR;
+                let data: *mut DWORD = core::ptr::addr_of_mut!(Data);
+                if ntdll_sys::seh::try_except_all(|| {
+                    if DlgOverride == 0 {
+                        guah.PostWndProc.unwrap()(
+                            hWnd,
+                            Msg,
+                            wParam,
+                            lParam,
+                            result_out,
+                            data,
+                        );
+                    } else {
+                        guah.PostDefDlgProc.unwrap()(
+                            hWnd,
+                            Msg,
+                            wParam,
+                            lParam,
+                            result_out,
+                            data,
+                        );
+                    }
+                })
+                .is_err()
+                {
+                    ERR!("Got exception in hooked PostWndProc, dlg:%d!\n", DlgOverride);
                 }
             }
         }
@@ -1992,24 +2052,33 @@ unsafe fn IntCallWindowProcA_impl(
     'Exit: {
         if IsAnsiProc != 0 {
             if Hook != 0 && (MsgOverride != 0 || DlgOverride != 0) {
-                if DlgOverride == 0 {
-                    PreResult = guah.PreWndProc.unwrap()(
-                        hWnd,
-                        Msg,
-                        wParam,
-                        lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        &mut Data,
-                    );
-                } else {
-                    PreResult = guah.PreDefDlgProc.unwrap()(
-                        hWnd,
-                        Msg,
-                        wParam,
-                        lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        &mut Data,
-                    );
+                // A themed hook that faults is logged and skipped, as in the C.
+                let result_out = core::ptr::addr_of_mut!(Result) as ULONG_PTR;
+                let data: *mut DWORD = core::ptr::addr_of_mut!(Data);
+                if ntdll_sys::seh::try_except_all(|| {
+                    if DlgOverride == 0 {
+                        PreResult = guah.PreWndProc.unwrap()(
+                            hWnd,
+                            Msg,
+                            wParam,
+                            lParam,
+                            result_out,
+                            data,
+                        );
+                    } else {
+                        PreResult = guah.PreDefDlgProc.unwrap()(
+                            hWnd,
+                            Msg,
+                            wParam,
+                            lParam,
+                            result_out,
+                            data,
+                        );
+                    }
+                })
+                .is_err()
+                {
+                    ERR!("Got exception in hooked PreWndProc, dlg:%d!\n", DlgOverride);
                 }
             }
 
@@ -2017,27 +2086,52 @@ unsafe fn IntCallWindowProcA_impl(
                 break 'Exit;
             }
 
-            Result = CALL_EXTERN_WNDPROC(WndProc, hWnd, Msg, wParam, lParam);
+            if Dialog == 0 {
+                Result = CALL_EXTERN_WNDPROC(WndProc, hWnd, Msg, wParam, lParam);
+            } else {
+                // The C catches a faulting dialog procedure (only a dialog's) and logs it.
+                match ntdll_sys::seh::try_except_all(|| CALL_EXTERN_WNDPROC(WndProc, hWnd, Msg, wParam, lParam)) {
+                    Ok(r) => Result = r,
+                    Err(_) => {
+                        ERR!(
+                            "Exception Dialog Ansi %p Msg %d pti %p Wndpti %p\n",
+                            WndProc.map_or(core::ptr::null(), |p| p as *const c_void),
+                            Msg,
+                            GetW32ThreadInfo(),
+                            wnd_pti(pWnd),
+                        );
+                    }
+                }
+            }
 
             if Hook != 0 && (MsgOverride != 0 || DlgOverride != 0) {
-                if DlgOverride == 0 {
-                    guah.PostWndProc.unwrap()(
-                        hWnd,
-                        Msg,
-                        wParam,
-                        lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        &mut Data,
-                    );
-                } else {
-                    guah.PostDefDlgProc.unwrap()(
-                        hWnd,
-                        Msg,
-                        wParam,
-                        lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        &mut Data,
-                    );
+                // A themed hook that faults is logged and skipped, as in the C.
+                let result_out = core::ptr::addr_of_mut!(Result) as ULONG_PTR;
+                let data: *mut DWORD = core::ptr::addr_of_mut!(Data);
+                if ntdll_sys::seh::try_except_all(|| {
+                    if DlgOverride == 0 {
+                        guah.PostWndProc.unwrap()(
+                            hWnd,
+                            Msg,
+                            wParam,
+                            lParam,
+                            result_out,
+                            data,
+                        );
+                    } else {
+                        guah.PostDefDlgProc.unwrap()(
+                            hWnd,
+                            Msg,
+                            wParam,
+                            lParam,
+                            result_out,
+                            data,
+                        );
+                    }
+                })
+                .is_err()
+                {
+                    ERR!("Got exception in hooked PostWndProc, dlg:%d!\n", DlgOverride);
                 }
             }
         } else {
@@ -2058,24 +2152,33 @@ unsafe fn IntCallWindowProcA_impl(
             }
 
             if Hook != 0 && (MsgOverride != 0 || DlgOverride != 0) {
-                if DlgOverride == 0 {
-                    PreResult = guah.PreWndProc.unwrap()(
-                        UnicodeMsg.hwnd,
-                        UnicodeMsg.message,
-                        UnicodeMsg.wParam,
-                        UnicodeMsg.lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        core::ptr::addr_of_mut!(Data),
-                    );
-                } else {
-                    PreResult = guah.PreDefDlgProc.unwrap()(
-                        UnicodeMsg.hwnd,
-                        UnicodeMsg.message,
-                        UnicodeMsg.wParam,
-                        UnicodeMsg.lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        core::ptr::addr_of_mut!(Data),
-                    );
+                // A themed hook that faults is logged and skipped, as in the C.
+                let result_out = core::ptr::addr_of_mut!(Result) as ULONG_PTR;
+                let data: *mut DWORD = core::ptr::addr_of_mut!(Data);
+                if ntdll_sys::seh::try_except_all(|| {
+                    if DlgOverride == 0 {
+                        PreResult = guah.PreWndProc.unwrap()(
+                            UnicodeMsg.hwnd,
+                            UnicodeMsg.message,
+                            UnicodeMsg.wParam,
+                            UnicodeMsg.lParam,
+                            result_out,
+                            data,
+                        );
+                    } else {
+                        PreResult = guah.PreDefDlgProc.unwrap()(
+                            UnicodeMsg.hwnd,
+                            UnicodeMsg.message,
+                            UnicodeMsg.wParam,
+                            UnicodeMsg.lParam,
+                            result_out,
+                            data,
+                        );
+                    }
+                })
+                .is_err()
+                {
+                    ERR!("Got exception in hooked PreWndProc, dlg:%d!\n", DlgOverride);
                 }
             }
 
@@ -2083,27 +2186,54 @@ unsafe fn IntCallWindowProcA_impl(
                 break 'Exit;
             }
 
-            Result = WndProc.unwrap()(UnicodeMsg.hwnd, UnicodeMsg.message, UnicodeMsg.wParam, UnicodeMsg.lParam);
+            // Through the thunk, as the C does: it tolerates a wndproc declared with the
+            // wrong calling convention (i386), which a direct call does not.
+            if Dialog == 0 {
+                Result = CALL_EXTERN_WNDPROC(WndProc, UnicodeMsg.hwnd, UnicodeMsg.message, UnicodeMsg.wParam, UnicodeMsg.lParam);
+            } else {
+                // The C catches a faulting dialog procedure (only a dialog's) and logs it.
+                match ntdll_sys::seh::try_except_all(|| CALL_EXTERN_WNDPROC(WndProc, UnicodeMsg.hwnd, UnicodeMsg.message, UnicodeMsg.wParam, UnicodeMsg.lParam)) {
+                    Ok(r) => Result = r,
+                    Err(_) => {
+                        ERR!(
+                            "Exception Dialog unicode %p Msg %d pti %p Wndpti %p\n",
+                            WndProc.map_or(core::ptr::null(), |p| p as *const c_void),
+                            Msg,
+                            GetW32ThreadInfo(),
+                            wnd_pti(pWnd),
+                        );
+                    }
+                }
+            }
 
             if Hook != 0 && (MsgOverride != 0 || DlgOverride != 0) {
-                if DlgOverride == 0 {
-                    guah.PostWndProc.unwrap()(
-                        UnicodeMsg.hwnd,
-                        UnicodeMsg.message,
-                        UnicodeMsg.wParam,
-                        UnicodeMsg.lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        core::ptr::addr_of_mut!(Data),
-                    );
-                } else {
-                    guah.PostDefDlgProc.unwrap()(
-                        UnicodeMsg.hwnd,
-                        UnicodeMsg.message,
-                        UnicodeMsg.wParam,
-                        UnicodeMsg.lParam,
-                        core::ptr::addr_of_mut!(Result) as ULONG_PTR,
-                        core::ptr::addr_of_mut!(Data),
-                    );
+                // A themed hook that faults is logged and skipped, as in the C.
+                let result_out = core::ptr::addr_of_mut!(Result) as ULONG_PTR;
+                let data: *mut DWORD = core::ptr::addr_of_mut!(Data);
+                if ntdll_sys::seh::try_except_all(|| {
+                    if DlgOverride == 0 {
+                        guah.PostWndProc.unwrap()(
+                            UnicodeMsg.hwnd,
+                            UnicodeMsg.message,
+                            UnicodeMsg.wParam,
+                            UnicodeMsg.lParam,
+                            result_out,
+                            data,
+                        );
+                    } else {
+                        guah.PostDefDlgProc.unwrap()(
+                            UnicodeMsg.hwnd,
+                            UnicodeMsg.message,
+                            UnicodeMsg.wParam,
+                            UnicodeMsg.lParam,
+                            result_out,
+                            data,
+                        );
+                    }
+                })
+                .is_err()
+                {
+                    ERR!("Got exception in hooked PostWndProc, dlg:%d!\n", DlgOverride);
                 }
             }
 

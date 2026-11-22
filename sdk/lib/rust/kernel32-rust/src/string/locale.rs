@@ -26196,6 +26196,11 @@ unsafe fn get_default_sublang(mut lang: LANGID) -> LANGID {
             return ((SUBLANG_CHINESE_HONGKONG as u16 as i32) << 10
                 | LANG_CHINESE as u16 as i32) as LANGID;
         }
+        // Irish: SUBLANG_DEFAULT would give 0x043c, which is gd-GB (Scottish Gaelic, a
+        // different language); Windows' neutral "ga" is ga-IE, 0x083c (Wine's locale test).
+        0x003c => {
+            return 0x083c; // MAKELANGID(LANG_IRISH, SUBLANG_IRISH_IRELAND)
+        }
         _ => {}
     }
     if (lang as i32) >> 10 == SUBLANG_NEUTRAL as i32 {
@@ -27092,7 +27097,10 @@ pub unsafe extern "system" fn ConvertDefaultLocale(mut lcid: LCID) -> LCID {
         }
         _ => {
             langid = LANGIDFROMLCID(lcid);
-            if SUBLANGID(langid) == SUBLANG_NEUTRAL {
+            // A neutral LCID with a non-default sort (ja/ga + SORT_JAPANESE_UNICODE) comes
+            // back unchanged on Windows 7 and later; only SORT_DEFAULT ones resolve to the
+            // language's default locale. The C resolved both (the <= Vista answer).
+            if SUBLANGID(langid) == SUBLANG_NEUTRAL && SORTIDFROMLCID(lcid) == SORT_DEFAULT {
                 langid = get_default_sublang(langid);
                 lcid = MAKELCID(langid, SORTIDFROMLCID(lcid));
             }
@@ -27120,48 +27128,71 @@ pub unsafe extern "system" fn IsValidLocale(lcid: LCID, flags: DWORD) -> BOOL {
     ) != core::ptr::null_mut()) as BOOL
 }
 
-unsafe extern "system" fn enum_lang_proc_a(
-    hModule: HMODULE,
-    type_0: LPCSTR,
-    name: LPCSTR,
-    LangID: WORD,
-    lParam: LONG_PTR,
-) -> BOOL {
-    let lpfnLocaleEnum: LOCALE_ENUMPROCA = 
-        core::mem::transmute::<isize, LOCALE_ENUMPROCA>(lParam as isize);
-    let mut buf: [i8; 20] = [0; 20];
-    sprintf(
-        buf.as_mut_ptr(),
-        b"%08x\0".as_ptr() as *const i8,
-        LangID as UINT,
-    );
-    lpfnLocaleEnum.expect("non-null function pointer")(buf.as_mut_ptr())
+// winnls.h
+const LCID_INSTALLED: DWORD = 1;
+const LCID_ALTERNATE_SORTS: DWORD = 4;
+
+// The locales Windows enumerates under LCID_ALTERNATE_SORTS: the non-default sort orders
+// (MAKELCID(lang, SORT_*)). Our resources hold only default-sort data, so these are
+// enumerated from this list; each one's language is one we carry.
+const ALTERNATE_SORT_LCIDS: [LCID; 11] = [
+    0x0001_0407, // de-DE_phoneb (SORT_GERMAN_PHONE_BOOK)
+    0x0001_040e, // hu-HU_technl (SORT_HUNGARIAN_TECHNICAL)
+    0x0001_0437, // ka-GE_modern (SORT_GEORGIAN_MODERN)
+    0x0002_0804, // zh-CN_stroke (SORT_CHINESE_PRC)
+    0x0002_1004, // zh-SG_stroke
+    0x0002_1404, // zh-MO_stroke
+    0x0003_0404, // zh-TW_pronun (SORT_CHINESE_BOPOMOFO)
+    0x0004_0404, // zh-TW_radstr (SORT_CHINESE_RADICALSTROKE)
+    0x0004_0411, // ja-JP_radstr (SORT_JAPANESE_RADICALSTROKE)
+    0x0004_0c04, // zh-HK_radstr
+    0x0004_1404, // zh-MO_radstr
+];
+
+// One walk for both entry points: `emit` gets each LCID and returns the callback's verdict;
+// FALSE stops the enumeration, as on Windows (the C kept going through the resource list
+// and ignored dwFlags entirely, so LCID_ALTERNATE_SORTS listed only default sorts).
+struct LocaleWalk<'a> {
+    emit: &'a mut dyn FnMut(LCID) -> BOOL,
+    stopped: bool,
 }
-unsafe extern "system" fn enum_lang_proc_w(
+
+unsafe extern "system" fn enum_lang_proc_walk(
     _hModule: HMODULE,
     _type: LPCWSTR,
     _name: LPCWSTR,
     LangID: WORD,
     lParam: LONG_PTR,
 ) -> BOOL {
-    static FORMAT_W: [WCHAR; 5] = [
-        b'%' as u16,
-        b'0' as u16,
-        b'8' as u16,
-        b'x' as u16,
-        0,
-    ];
-    
-    let lpfnLocaleEnum: LOCALE_ENUMPROCW = core::mem::transmute(lParam);
-    let mut buf: [WCHAR; 20] = [0; 20];
-    
-    sprintfW(
-        buf.as_mut_ptr(),
-        FORMAT_W.as_ptr(),
-        LangID as u32,
-    );
-    
-    (lpfnLocaleEnum.expect("EnumSystemLocalesW callback must be non-null"))(buf.as_mut_ptr())
+    let walk = &mut *(lParam as *mut LocaleWalk);
+    if (walk.emit)(LangID as LCID) == 0 {
+        walk.stopped = true;
+        return 0;
+    }
+    1
+}
+
+// Defaults unless the caller asked for alternate sorts alone; alternates when asked.
+unsafe fn walk_system_locales(dwFlags: DWORD, emit: &mut dyn FnMut(LCID) -> BOOL) {
+    let mut walk = LocaleWalk { emit, stopped: false };
+    let defaults = dwFlags & (LCID_INSTALLED | LCID_SUPPORTED) != 0
+        || dwFlags & LCID_ALTERNATE_SORTS == 0;
+    if defaults {
+        EnumResourceLanguagesW(
+            kernel32_handle,
+            6usize as LPCWSTR, // RT_STRING
+            LOCALE_ILANGUAGE as LPCWSTR,
+            as_enumreslang_w(enum_lang_proc_walk),
+            &mut walk as *mut LocaleWalk as LONG_PTR,
+        );
+    }
+    if dwFlags & LCID_ALTERNATE_SORTS != 0 && !walk.stopped {
+        for &lcid in ALTERNATE_SORT_LCIDS.iter() {
+            if (walk.emit)(lcid) == 0 {
+                break;
+            }
+        }
+    }
 }
 
 #[no_mangle]
@@ -27169,17 +27200,16 @@ pub unsafe extern "system" fn EnumSystemLocalesA(
     lpfnLocaleEnum: LOCALE_ENUMPROCA,
     dwFlags: DWORD,
 ) -> BOOL {
-
     TRACE!("(%p,%08x)\n", lpfnLocaleEnum.map_or(core::ptr::null(), |f| f as *const core::ffi::c_void), dwFlags);
-
-    EnumResourceLanguagesA(
-        kernel32_handle,
-        (6 & 0xffff) as LPSTR as LPCSTR,
-        LOCALE_ILANGUAGE as LPCSTR,
-        as_enumreslang_a(enum_lang_proc_a),
-        core::mem::transmute::<LOCALE_ENUMPROCA, LONG_PTR>(lpfnLocaleEnum),
-    );
-
+    let Some(callback) = lpfnLocaleEnum else {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    };
+    walk_system_locales(dwFlags, &mut |lcid| {
+        let mut buf: [i8; 20] = [0; 20];
+        sprintf(buf.as_mut_ptr(), b"%08x\0".as_ptr() as *const i8, lcid as UINT);
+        callback(buf.as_mut_ptr())
+    });
     1
 }
 
@@ -27188,25 +27218,17 @@ pub unsafe extern "system" fn EnumSystemLocalesW(
     lpfnLocaleEnum: LOCALE_ENUMPROCW,
     dwFlags: DWORD,
 ) -> BOOL {
-
-    DbgPrintEx(
-        gDebugChannel,
-        DPFLTR_TRACE_LEVEL,
-        b"(%s:%d) (%p,%08x)\n\0".as_ptr() as PCSTR,
-        b"locale.c\0".as_ptr() as PCSTR,
-        3003,
-        lpfnLocaleEnum.map_or(core::ptr::null(), |f| f as *const core::ffi::c_void),
-        dwFlags,
-    );
-
-    EnumResourceLanguagesW(
-        kernel32_handle,
-        (6u64 & 0xffff) as LPCWSTR,
-        LOCALE_ILANGUAGE as LPCWSTR,
-        as_enumreslang_w(enum_lang_proc_w),
-        core::mem::transmute::<LOCALE_ENUMPROCW, LONG_PTR>(lpfnLocaleEnum),
-    );
-
+    TRACE!("(%p,%08x)\n", lpfnLocaleEnum.map_or(core::ptr::null(), |f| f as *const core::ffi::c_void), dwFlags);
+    let Some(callback) = lpfnLocaleEnum else {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    };
+    static FORMAT_W: [WCHAR; 5] = [b'%' as u16, b'0' as u16, b'8' as u16, b'x' as u16, 0];
+    walk_system_locales(dwFlags, &mut |lcid| {
+        let mut buf: [WCHAR; 20] = [0; 20];
+        sprintfW(buf.as_mut_ptr(), FORMAT_W.as_ptr(), lcid as u32);
+        callback(buf.as_mut_ptr())
+    });
     1
 }
 
@@ -27559,14 +27581,19 @@ unsafe fn map_to_halfwidth(
                     if pos < dstlen {
                         *dst.offset(pos as isize) = (*table1.offset(i as isize))[1];
                     }
-                } else if dstlen == 0 {
-                    pos += 1;
-                } else if pos + 1 < dstlen {
-                    *dst.offset(pos as isize) = (*table1.offset(i as isize))[1];
-                    pos += 1;
-                    *dst.offset(pos as isize) = (*table1.offset(i as isize))[2];
                 } else {
-                    *dst.offset(pos as isize) = ch;
+                    // A two-unit mapping (KATAKANA GA -> KA + voiced mark) always counts
+                    // both units and writes only what fits, so a short buffer ends in the
+                    // caller's ERROR_INSUFFICIENT_BUFFER. The C wrote the unmapped char at
+                    // dst[pos] instead and counted one unit: a truncated "success", and a
+                    // write one past the buffer when pos == dstlen.
+                    if pos < dstlen {
+                        *dst.offset(pos as isize) = (*table1.offset(i as isize))[1];
+                    }
+                    pos += 1;
+                    if pos < dstlen {
+                        *dst.offset(pos as isize) = (*table1.offset(i as isize))[2];
+                    }
                 }
                 break;
             }
@@ -28050,6 +28077,22 @@ pub unsafe extern "system" fn LCMapStringEx(
         return 0;
     }
 
+    // An unknown locale name fails a mapping that depends on the locale (casing, sort
+    // keys), as on Windows; kana and width mappings do not consult it and succeed under any
+    // name (Wine's test checks both). The C never checked. NULL is the user default, "" the
+    // invariant locale, and "!x-sys-default-locale" the system default; IsValidLocaleName
+    // accepts the first two, not the reserved '!' names.
+    let locale_dependent =
+        LCMAP_LOWERCASE | LCMAP_UPPERCASE | LCMAP_LINGUISTIC_CASING | LCMAP_SORTKEY;
+    if flags & locale_dependent != 0
+        && !locale.is_null()
+        && *locale != b'!' as WCHAR
+        && IsValidLocaleName(locale) == 0
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+
     if srclen < 0 {
         srclen = lstrlenW(src) + 1;
     }
@@ -28091,6 +28134,11 @@ pub unsafe extern "system" fn LCMapStringEx(
     lcmap_string(is_turkic_locale(locale), flags, src, srclen, dst, dstlen)
 }
 
+extern "system" {
+    fn IsValidLocaleName(lpLocaleName: LPCWSTR) -> BOOL;
+    fn LCIDToLocaleName(Locale: LCID, lpName: LPWSTR, cchName: INT, dwFlags: DWORD) -> INT;
+}
+
 // "tr-*" or "az-*", any case (the test passes "TR-TR" and "az-Latn-az").
 unsafe fn is_turkic_locale(locale: LPCWSTR) -> bool {
     if locale.is_null() || *locale == 0 || *locale.add(1) == 0 || *locale.add(2) != b'-' as WCHAR {
@@ -28111,8 +28159,16 @@ pub unsafe extern "system" fn LCMapStringW(
 ) -> INT {
     TRACE!("(0x%04x,0x%08x,%s,%d,%p,%d)\n", lcid, flags, debugstr_wn(src, srclen), srclen, dst, dstlen);
 
+    // The LCID selects the locale, as on Windows: an invalid one fails, and a Turkic one
+    // gets Turkic casing. The C ignored it and always mapped as the user default.
+    let mut name: [WCHAR; 85] = [0; 85]; // LOCALE_NAME_MAX_LENGTH
+    if LCIDToLocaleName(lcid, name.as_mut_ptr(), name.len() as INT, 0) == 0 {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return 0;
+    }
+
     LCMapStringEx(
-        core::ptr::null(),
+        name.as_ptr(),
         flags,
         src,
         srclen,
@@ -29570,6 +29626,12 @@ pub unsafe extern "system" fn GetGeoInfoW(
             return NLS_GetGeoFriendlyName(geoid, data, data_len, lang);
         }
         1 => {
+            // GEO_NATION: the id as a string, for a nation only. A region (39070, "World")
+            // has no nation, so Windows returns 0 and writes nothing; the C answered with
+            // the region's own id.
+            if (*ptr).kind != LOCATION_NATION {
+                return 0;
+            }
             val = geoid as i32;
         }
         12 => {

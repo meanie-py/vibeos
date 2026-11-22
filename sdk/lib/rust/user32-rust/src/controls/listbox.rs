@@ -1208,13 +1208,24 @@ unsafe fn LISTBOX_GetText( descr: *mut LB_DESCR, index: INT, buffer: LPWSTR, uni
                                         core::ptr::null_mut(), 0, core::ptr::null_mut(), core::ptr::null_mut() ) as LRESULT;
         }
 
-        if unicode != 0 {
-            strcpyW( buffer, str );
-            len = strlenW(buffer) as LRESULT;
-        } else {
-            len = (WideCharToMultiByte(CP_ACP, 0, str, -1,
-                                      buffer as LPSTR, 0x7FFFFFFF, core::ptr::null_mut(), core::ptr::null_mut()) - 1) as LRESULT;
-        }
+        // The C's guard "hides a Delphi bug that passes a read-only buffer": the app
+        // gets LB_ERR instead of crashing.
+        len = match ntdll_sys::seh::try_except_all(|| {
+            if unicode != 0 {
+                strcpyW( buffer, str );
+                strlenW(buffer) as LRESULT
+            } else {
+                (WideCharToMultiByte(CP_ACP, 0, str, -1,
+                                     buffer as LPSTR, 0x7FFFFFFF, core::ptr::null_mut(), core::ptr::null_mut()) - 1) as LRESULT
+            }
+        }) {
+            Ok(n) => n,
+            Err(_) => {
+                ERR!("got an invalid buffer (Delphi bug?)\n");
+                SetLastError(ERROR_INVALID_PARAMETER);
+                LB_ERR as LRESULT
+            }
+        };
     } else {
         // Wine 11.11: the whole ULONG_PTR, not its low DWORD (LB_GETTEXT on a
         // no-strings owner-draw listbox reads back the item data).
@@ -2158,7 +2169,10 @@ unsafe fn LISTBOX_SetCount(descr: *mut LB_DESCR, count: UINT) -> LRESULT {
     if count != 0 {
         LISTBOX_UpdateScroll(descr);
         if count < orig_num {
-            (*descr).anchor_item = core::cmp::min((*descr).anchor_item, count as INT - 1);
+            // C: `min(anchor_item, count - 1)` with an INT against a UINT is an UNSIGNED
+            // compare, so "no anchor" (-1) becomes the new last item. Compare the same way
+            // (comctl32's twin listbox already does).
+            (*descr).anchor_item = core::cmp::min((*descr).anchor_item as UINT, count - 1) as INT;
             if (*descr).selected_item >= count as INT {
                 (*descr).selected_item = -1;
             }
@@ -2168,7 +2182,7 @@ unsafe fn LISTBOX_SetCount(descr: *mut LB_DESCR, count: UINT) -> LRESULT {
                 LISTBOX_SetTopItem(descr, 0, TRUE);
             }
 
-            (*descr).focus_item = core::cmp::min((*descr).focus_item, count as INT - 1);
+            (*descr).focus_item = core::cmp::min((*descr).focus_item as UINT, count - 1) as INT;
         }
         /* If it was empty before growing, set focus to the first item */
         else if orig_num == 0 {

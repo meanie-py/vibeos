@@ -191,10 +191,15 @@ unsafe fn PdoHandleQueryProperty(
     let PropertyQuery: PSTORAGE_PROPERTY_QUERY =
         (*Irp).AssociatedIrp.SystemBuffer as PSTORAGE_PROPERTY_QUERY;
 
+    // Divergence from ioctl.c, which answers STATUS_INVALID_PARAMETER_1 (Win32 87) here. A
+    // property the port does not implement is an unsupported request, not a malformed one:
+    // Windows 11 answers StorageAccessAlignmentProperty on a CD volume with
+    // ERROR_INVALID_FUNCTION (tools/payloads/hostapps/fsquery.win11.txt, "===CD D:===").
+    // classpnp's ClasspLowerLayerNotSupport accepts either status, so its callers are unaffected.
     if (*PropertyQuery).PropertyId != StorageDeviceProperty
         && (*PropertyQuery).PropertyId != StorageAdapterProperty
     {
-        status = STATUS_INVALID_PARAMETER_1;
+        status = STATUS_INVALID_DEVICE_REQUEST;
     } else if (*PropertyQuery).QueryType == PropertyExistsQuery {
         status = STATUS_SUCCESS;
     } else if (*PropertyQuery).QueryType != PropertyStandardQuery {

@@ -4291,23 +4291,17 @@ pub unsafe extern "system" fn wWinMain(
         time: 0,
         pt: tagPOINT { x: 0, y: 0 },
     };
-    // _SEH2_TRY: a Rust message loop raises no SEH exception; the handler below is kept.
-    let mut _SEH2_Volatile0_local: i32 = 0;
-    {
+    // A window procedure that faults while dispatching ends the loop; the C
+    // logs it and exits with -1 instead of crashing conime.
+    let msg_ptr = core::ptr::addr_of_mut!(msg);
+    let looped = ntdll_sys::seh::try_except_all(|| {
         // Main loop
-        while GetMessageW(
-            core::ptr::addr_of_mut!(msg),
-            core::ptr::null_mut::<HWND__>(),
-            0 as UINT,
-            0 as UINT,
-        ) != 0
-        {
-            TranslateMessage(core::ptr::addr_of_mut!(msg));
-            DispatchMessageW(core::ptr::addr_of_mut!(msg));
+        while GetMessageW(msg_ptr, core::ptr::null_mut::<HWND__>(), 0 as UINT, 0 as UINT) != 0 {
+            TranslateMessage(msg_ptr);
+            DispatchMessageW(msg_ptr);
         }
-    }
-    // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-    if _SEH2_Volatile0_local != 0 {
+    });
+    if looped.is_err() {
         ERR!("Exception\n");
         msg.wParam = (-(1 as i32)) as WPARAM;
     }

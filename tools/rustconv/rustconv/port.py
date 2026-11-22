@@ -3538,9 +3538,10 @@ _ADJACENT_STRINGS = re.compile(rf"(?<![\w#'])({_STR_LIT})(\s+)({_STR_LIT})")
 
 # Every spelling the model writes: `TRACE_(fps, ..)`, C's own curried `WARN_(d3d_perf)(..)`, and
 # the channel slipped in front of the plain macro's format, `WARN!(d3d_perf, "..")` -- a format is
-# always a string literal, so a bare lowercase name before one can only be the channel.
+# always a string literal, so a bare lowercase name before one can only be the channel. The
+# named form's channel also comes back QUOTED, `TRACE_("chain", "..")` (crypt32's chain.c: 7 sites).
 _NAMED_CHANNEL = re.compile(
-    r"\b(ERR|WARN|FIXME|TRACE)(?:_!?\(\s*([A-Za-z_]\w*)\s*(?:,|\)\s*\()"
+    r"\b(ERR|WARN|FIXME|TRACE)(?:_!?\(\s*(\"?)([A-Za-z_]\w*)\2\s*(?:,|\)\s*\()"
     r"|!\(\s*([a-z_][a-z0-9_]*)\s*,(?=\s*(?:b|c)?\"))"
 )
 
@@ -3557,7 +3558,7 @@ def _named_channel_debug(state: dict) -> int:
     for path in sorted(_stem_sources(state)):
         text = path.read_text()
         new, k = _NAMED_CHANNEL.subn(
-            lambda m: f"WINE_{m.group(1)}_!(__wine_dbch_{m.group(2) or m.group(3)},", text
+            lambda m: f"WINE_{m.group(1)}_!(__wine_dbch_{m.group(3) or m.group(4)},", text
         )
         if k:
             path.write_text(new)

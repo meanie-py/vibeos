@@ -5857,20 +5857,16 @@ pub unsafe extern "system" fn SetupDiGetDeviceInstallParamsW(
 
             ret = TRUE as BOOL;
 
-            // _SEH2_TRY
-            let mut _SEH2_Volatile0_local: i32 = 0;
-            {
+            // A caller's params buffer smaller than Source->cbSize faults here;
+            // the C reports the exception code as the last error and fails.
+            if let Err(code) = ntdll_sys::seh::try_except_all(|| {
                 memcpy(
                     DeviceInstallParams as *mut core::ffi::c_void,
                     Source as *const core::ffi::c_void,
                     (*Source).cbSize as usize,
                 );
-            }
-            // _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
-            if _SEH2_Volatile0_local != 0 {
-                SetLastError(
-                    RtlNtStatusToDosError(_SEH2_GetExceptionCode() as NTSTATUS) as DWORD,
-                );
+            }) {
+                SetLastError(RtlNtStatusToDosError(code) as DWORD);
                 ret = FALSE as BOOL;
             }
             // _SEH2_END

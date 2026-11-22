@@ -13,6 +13,7 @@ extern "C" {
 }
 extern "system" {
     fn GetProcessHeap() -> HANDLE;
+    fn SetLastError(dwErrCode: DWORD);
     fn HeapFree(hHeap: HANDLE, dwFlags: DWORD, lpMem: LPVOID) -> BOOL;
     fn MultiByteToWideChar( CodePage: UINT, dwFlags: DWORD, lpMultiByteStr: LPCSTR, cbMultiByte: core::ffi::c_int, lpWideCharStr: LPWSTR, cchWideChar: core::ffi::c_int, ) -> core::ffi::c_int;
     fn WideCharToMultiByte( CodePage: UINT, dwFlags: DWORD, lpWideCharStr: LPCWSTR, cchWideChar: core::ffi::c_int, lpMultiByteStr: LPSTR, cbMultiByte: core::ffi::c_int, lpDefaultChar: LPCSTR, lpUsedDefaultChar: *mut BOOL, ) -> core::ffi::c_int;
@@ -68,7 +69,16 @@ pub unsafe extern "system" fn CharLowerA(str: LPSTR) -> LPSTR {
         return (ch as u8 as UINT_PTR) as LPSTR;
     }
 
-    CharLowerBuffA(str, strlen(str) as DWORD);
+    // A bad string pointer faults in strlen; the C sets ERROR_INVALID_PARAMETER
+    // and returns NULL.
+    if ntdll_sys::seh::try_except_all(|| {
+        CharLowerBuffA(str, strlen(str) as DWORD);
+    })
+    .is_err()
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return core::ptr::null_mut();
+    }
 
     str
 }
@@ -288,7 +298,16 @@ pub unsafe extern "system" fn CharUpperA(str: LPSTR) -> LPSTR {
         return (ch as BYTE) as UINT_PTR as LPSTR;
     }
 
-    CharUpperBuffA(str, strlen(str) as DWORD);
+    // A bad string pointer faults in strlen; the C sets ERROR_INVALID_PARAMETER
+    // and returns NULL.
+    if ntdll_sys::seh::try_except_all(|| {
+        CharUpperBuffA(str, strlen(str) as DWORD);
+    })
+    .is_err()
+    {
+        SetLastError(ERROR_INVALID_PARAMETER);
+        return core::ptr::null_mut();
+    }
 
     str
 }

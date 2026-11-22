@@ -254,10 +254,11 @@ pub unsafe extern "system" fn SetWindowRgn(hWnd: HWND, hRgn: HRGN, bRedraw: BOOL
         return Ret;
     }
 
-    // _SEH2_TRY { ... } _SEH2_EXCEPT(EXECUTE_HANDLER) {} — DUMMY_PSEH: handler is
-    // dead code, only the guarded body runs.
+    // The C catches a faulting themed hook and returns what Ret held.
     if let Some(f) = guah.SetWindowRgn {
-        Ret = f(hWnd, hRgn, bRedraw);
+        if let Ok(r) = ntdll_sys::seh::try_except_all(|| f(hWnd, hRgn, bRedraw)) {
+            Ret = r;
+        }
     }
 
     EndUserApiHook();

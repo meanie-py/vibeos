@@ -473,7 +473,6 @@ pub unsafe fn VersionRegisterClass(
 ) -> BOOL {
     let mut Ret: BOOL = 0;
     let mut hLibModule: HMODULE = core::ptr::null_mut();
-    let pRegisterClassNameW: PREGISTERCLASSNAMEW;
     let mut ClassName: _UNICODE_STRING = core::mem::zeroed();
     let mut ClassNameBuf: [u16; MAX_PATH as usize] = [0; MAX_PATH as usize];
     let mut Frame: RTL_CALLER_ALLOCATED_ACTIVATION_CONTEXT_STACK_FRAME_EXTENDED =
@@ -483,13 +482,13 @@ pub unsafe fn VersionRegisterClass(
 
     RtlActivateActivationContextUnsafeFast(&mut Frame, Contex);
 
-    // _SEH2_TRY body — runs normally; the _SEH2_EXCEPT handler is DEAD CODE
-    // under USE_DUMMY_PSEH and is omitted. `Error_Exit` was reached via
-    // _SEH2_YIELD(goto Error_Exit) → modeled as `break 'try_block`.
-    'try_block: {
+    // The class DLL's RegisterClassNameW runs under the C's _SEH2_TRY: a faulting
+    // one is logged and treated as "not registered". `_SEH2_YIELD(goto Error_Exit)`
+    // is the closure's early return.
+    if ntdll_sys::seh::try_except_all(|| {
         hLibModule = LoadLibraryW(lpLibFileName);
         if !hLibModule.is_null() {
-            pRegisterClassNameW = core::mem::transmute(GetProcAddress(
+            let pRegisterClassNameW: PREGISTERCLASSNAMEW = core::mem::transmute(GetProcAddress(
                 hLibModule,
                 b"RegisterClassNameW\0".as_ptr() as LPCSTR,
             ));
@@ -505,13 +504,18 @@ pub unsafe fn VersionRegisterClass(
                         &mut ClassName,
                     ) == 0
                     {
-                        break 'try_block;
+                        ERR!("Error while verifying ATOM\n");
+                        return;
                     }
                     pszClass = ClassName.Buffer;
                 }
                 Ret = (pRegisterClassNameW.unwrap())(pszClass) as BOOL;
             }
         }
+    })
+    .is_err()
+    {
+        ERR!("Got exception while trying to call RegisterClassNameW!\n");
     }
 
     if Ret != 0 || hLibModule.is_null() {
@@ -1101,34 +1105,40 @@ unsafe fn IntGetClassLongW_impl(Wnd: PWND, Class: PCLS, nIndex: i32) -> usize {
 
 #[no_mangle]
 pub unsafe extern "system" fn GetClassLongA(hWnd: HWND, nIndex: i32) -> u32 {
-    let mut Ret: usize = 0;
+    let Ret: usize;
 
     let Wnd = ValidateHwnd(hWnd);
     if Wnd.is_null() {
         return 0;
     }
 
-    // _SEH2_TRY body — except handler (Ret = 0) is DEAD CODE under USE_DUMMY_PSEH.
-    let Class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
-    if !Class.is_null() {
-        // class.c: `#ifdef _WIN64` — pointer-sized, so arm64 too, not just amd64.
-        #[cfg(target_pointer_width = "64")]
-        {
-            match nIndex {
-                GCLP_HBRBACKGROUND | GCLP_HCURSOR | GCLP_HICON | GCLP_HICONSM
-                | GCLP_HMODULE | GCLP_MENUNAME | GCLP_WNDPROC => {
-                    SetLastError(ERROR_INVALID_INDEX);
-                }
-                _ => {
-                    Ret = IntGetClassLongA(Wnd, Class, nIndex);
+    // The class lives in the desktop heap and is read without the user lock;
+    // a fault there answers 0, as the C's handler does.
+    Ret = ntdll_sys::seh::try_except_all(|| -> usize {
+        let mut Ret: usize = 0;
+        let Class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
+        if !Class.is_null() {
+            // class.c: `#ifdef _WIN64` — pointer-sized, so arm64 too, not just amd64.
+            #[cfg(target_pointer_width = "64")]
+            {
+                match nIndex {
+                    GCLP_HBRBACKGROUND | GCLP_HCURSOR | GCLP_HICON | GCLP_HICONSM
+                    | GCLP_HMODULE | GCLP_MENUNAME | GCLP_WNDPROC => {
+                        SetLastError(ERROR_INVALID_INDEX);
+                    }
+                    _ => {
+                        Ret = IntGetClassLongA(Wnd, Class, nIndex);
+                    }
                 }
             }
+            #[cfg(not(target_pointer_width = "64"))]
+            {
+                Ret = IntGetClassLongA(Wnd, Class, nIndex);
+            }
         }
-        #[cfg(not(target_pointer_width = "64"))]
-        {
-            Ret = IntGetClassLongA(Wnd, Class, nIndex);
-        }
-    }
+        Ret
+    })
+    .unwrap_or(0);
 
     Ret as u32
 }
@@ -1136,34 +1146,40 @@ pub unsafe extern "system" fn GetClassLongA(hWnd: HWND, nIndex: i32) -> u32 {
 #[no_mangle]
 pub unsafe extern "system" fn GetClassLongW(hWnd: HWND, nIndex: i32) -> u32 {
     let Wnd: PWND;
-    let Class: PCLS;
-    let mut Ret: usize = 0;
+    let Ret: usize;
 
     Wnd = ValidateHwnd(hWnd);
     if Wnd.is_null() {
         return 0;
     }
 
-    Class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
-    if !Class.is_null() {
-        // class.c: `#ifdef _WIN64` — pointer-sized, so arm64 too, not just amd64.
-        #[cfg(target_pointer_width = "64")]
-        {
-            match nIndex {
-                GCLP_HBRBACKGROUND | GCLP_HCURSOR | GCLP_HICON | GCLP_HICONSM
-                | GCLP_HMODULE | GCLP_MENUNAME | GCLP_WNDPROC => {
-                    SetLastError(ERROR_INVALID_INDEX);
-                }
-                _ => {
-                    Ret = IntGetClassLongW(Wnd, Class, nIndex);
+    // The class lives in the desktop heap and is read without the user lock;
+    // a fault there answers 0, as the C's handler does.
+    Ret = ntdll_sys::seh::try_except_all(|| -> usize {
+        let mut Ret: usize = 0;
+        let Class: PCLS = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
+        if !Class.is_null() {
+            // class.c: `#ifdef _WIN64` — pointer-sized, so arm64 too, not just amd64.
+            #[cfg(target_pointer_width = "64")]
+            {
+                match nIndex {
+                    GCLP_HBRBACKGROUND | GCLP_HCURSOR | GCLP_HICON | GCLP_HICONSM
+                    | GCLP_HMODULE | GCLP_MENUNAME | GCLP_WNDPROC => {
+                        SetLastError(ERROR_INVALID_INDEX);
+                    }
+                    _ => {
+                        Ret = IntGetClassLongW(Wnd, Class, nIndex);
+                    }
                 }
             }
+            #[cfg(not(target_pointer_width = "64"))]
+            {
+                Ret = IntGetClassLongW(Wnd, Class, nIndex);
+            }
         }
-        #[cfg(not(target_pointer_width = "64"))]
-        {
-            Ret = IntGetClassLongW(Wnd, Class, nIndex);
-        }
-    }
+        Ret
+    })
+    .unwrap_or(0);
 
     Ret as u32
 }
@@ -1172,17 +1188,24 @@ pub unsafe extern "system" fn GetClassLongW(hWnd: HWND, nIndex: i32) -> u32 {
 #[cfg(not(target_arch = "x86"))]
 #[no_mangle]
 pub unsafe extern "system" fn GetClassLongPtrA(hWnd: HWND, nIndex: i32) -> ULONG_PTR {
-    let mut Ret: usize = 0;
+    let Ret: usize;
 
     let Wnd: PWND = ValidateHwnd(hWnd);
     if Wnd.is_null() {
         return 0;
     }
 
-    let Class: PCLS = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
-    if !Class.is_null() {
-        Ret = IntGetClassLongA(Wnd, Class, nIndex);
-    }
+    // The class lives in the desktop heap and is read without the user lock;
+    // a fault there answers 0, as the C's handler does.
+    Ret = ntdll_sys::seh::try_except_all(|| -> usize {
+        let mut Ret: usize = 0;
+        let Class: PCLS = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
+        if !Class.is_null() {
+            Ret = IntGetClassLongA(Wnd, Class, nIndex);
+        }
+        Ret
+    })
+    .unwrap_or(0);
 
     Ret as ULONG_PTR
 }
@@ -1191,18 +1214,24 @@ pub unsafe extern "system" fn GetClassLongPtrA(hWnd: HWND, nIndex: i32) -> ULONG
 #[no_mangle]
 pub unsafe extern "system" fn GetClassLongPtrW(hWnd: HWND, nIndex: i32) -> ULONG_PTR {
     let Wnd: PWND;
-    let Class: PCLS;
-    let mut Ret: usize = 0;
+    let Ret: usize;
 
     Wnd = ValidateHwnd(hWnd);
     if Wnd.is_null() {
         return 0;
     }
 
-    Class = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
-    if !Class.is_null() {
-        Ret = IntGetClassLongW(Wnd, Class, nIndex);
-    }
+    // The class lives in the desktop heap and is read without the user lock;
+    // a fault there answers 0, as the C's handler does.
+    Ret = ntdll_sys::seh::try_except_all(|| -> usize {
+        let mut Ret: usize = 0;
+        let Class: PCLS = crate::wow64::desktop_cls_to_user((*Wnd).pcls as PVOID);
+        if !Class.is_null() {
+            Ret = IntGetClassLongW(Wnd, Class, nIndex);
+        }
+        Ret
+    })
+    .unwrap_or(0);
 
     Ret as ULONG_PTR
 }
@@ -1214,12 +1243,14 @@ pub unsafe extern "system" fn GetClassLongPtrW(hWnd: HWND, nIndex: i32) -> ULONG
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn GetClassLongPtrW(hWnd: HWND, nIndex: i32) -> ULONG_PTR {
+    // nolint(dead_seh): on 32-bit this IS GetClassLongW, whose body holds the C's catch.
     GetClassLongW(hWnd, nIndex) as ULONG_PTR
 }
 
 #[cfg(target_arch = "x86")]
 #[no_mangle]
 pub unsafe extern "system" fn GetClassLongPtrA(hWnd: HWND, nIndex: i32) -> ULONG_PTR {
+    // nolint(dead_seh): on 32-bit this IS GetClassLongA, whose body holds the C's catch.
     GetClassLongA(hWnd, nIndex) as ULONG_PTR
 }
 

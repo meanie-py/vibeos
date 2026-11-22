@@ -825,6 +825,8 @@ pub unsafe extern "system" fn SetProcessMitigationPolicy(
 extern "system" {
     fn GetLocaleInfoEx(lpLocaleName: LPCWSTR, LCType: DWORD, lpLCData: LPWSTR, cchData: i32) -> i32;
     fn IsValidLocaleName(lpLocaleName: LPCWSTR) -> BOOL;
+    fn LocaleNameToLCID(lpName: LPCWSTR, dwFlags: DWORD) -> LCID;
+    fn LCIDToLocaleName(Locale: LCID, lpName: LPWSTR, cchName: i32, dwFlags: DWORD) -> i32;
 }
 
 const LOCALE_NAME_MAX_LENGTH_: usize = 85;
@@ -908,6 +910,18 @@ pub unsafe extern "system" fn ResolveLocaleName(
         let mut n = GetLocaleInfoEx(tmp.as_ptr(), LOCALE_SSORTLOCALE_, res.as_mut_ptr(), res.len() as i32);
         if n <= 1 {
             n = GetLocaleInfoEx(tmp.as_ptr(), LOCALE_SNAME_, res.as_mut_ptr(), res.len() as i32);
+        }
+        // A neutral name's SNAME is itself ("en"), but it resolves to its default specific
+        // locale, as LocaleNameToLCID without neutral names picks it ("en" -> "en-US",
+        // "zh" -> "zh-CN", "az" -> "az-Latn-AZ").
+        if n > 1 && !res[..n as usize].contains(&(b'-' as u16)) {
+            let lcid = LocaleNameToLCID(tmp.as_ptr(), 0);
+            if lcid != 0 {
+                let m = LCIDToLocaleName(lcid, res.as_mut_ptr(), res.len() as i32, 0);
+                if m > 1 {
+                    n = m;
+                }
+            }
         }
         if n > 1 {
             datalen = n;

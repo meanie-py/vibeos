@@ -232,11 +232,12 @@ row. Each row is tagged by where the twin runs and what its try body does:
 |---|---|---|---|
 | kernel | 0 | 0 | 0 |
 | rtl (both) | 0 | 0 | 0 |
-| user | 0 | 0 | 62 |
+| user | 0 | 0 | 0 |
 
-62 in all (235 at the first count, 2026-11-06; 222 after the `raise` rows; 157 after the
-kernel rows, every one fixed or carrying a reasoned `nolint(dead_seh)`; 135 after rtl; 106
-after the system processes; 62 after kernel32). `raise` means a raiser the Rust still CALLS: a port that turned the C's own
+0 in all since 2026-11-21 (235 at the first count, 2026-11-06; 222 after the `raise` rows; 157
+after the kernel rows, every one fixed or carrying a reasoned `nolint(dead_seh)`; 135 after
+rtl; 106 after the system processes; 62 after kernel32; 0 after the scattered DLLs and
+user32). The baseline is empty, so any new dead handler now fails `check`. `raise` means a raiser the Rust still CALLS: a port that turned the C's own
 `RtlRaiseStatus` into `return Err` has converted the contract and needs only a probe. Burn-down order: kernel `raise` first (one call from user mode bugchecks the box:
 that is how `ReleaseSemaphore` past the maximum was found), then kernel `probe`/`other`, then
 user mode (the process dies, not the machine). `tools/payloads/sehprobe` exercises the
@@ -258,6 +259,20 @@ What already landed, which the plan below predates:
   `cached_read_race` lands faults inside it), `FsRtlInitializeLargeMcb`, mup's
   `BroadcastOpen`, kernel32's Ctrl+C under a debugger, and NULL checks where this tree's
   `ExAllocatePoolWithQuotaTag` returns NULL instead of raising (`NtWriteFile`, `NtUnlockFile`).
+- 2026-11-21, the last 57 user rows (lsasrv, samsrv, msgina, advapi32, conutils, conime,
+  eventvwr, gdi32, setupapi, syssetup, ws2_32, user32). user32 now catches what its C does: a
+  faulting themed hook (uxtheme's Pre/Post WndProc, DefWindowProc, scroll bars, metrics), a
+  faulting dialog procedure in `IntCallWindowProcA/W`, a faulting hook procedure in
+  `User32CallHookProcFromKernel`, and desktop-heap reads of a window destroyed under the
+  caller. IntCallWindowProcA's unicode branch called the wndproc directly instead of through
+  `CALL_EXTERN_WNDPROC`, the i386 thunk for wrong-convention wndprocs; fixed. winspool's
+  `GetMonitorUI` had been gutted by its own "hand-completion" (`32733e7baf6`) and is restored.
+  Three lint fixes: `#if 0` handlers no longer count (epsapi), a twin tie goes to the C tree
+  whose CMakeLists names the crate (ddraw-rust ports Wine's ddraw, not the never-built
+  `dll/directx/ddraw`), and a ported exported API that catches for its own body no longer
+  covers its callers (user32's GetSystemMetrics had silenced LookupIconIdFromDirectoryEx).
+  `DhcpRequestParams` carries a `nolint`: the RPC it guards is not in our IDL (roadmap,
+  upstream-sync owed list).
 - 2026-11-07, every kernel `probe`/`other` row, mostly through `ntkrnl_sys::seh::try_except_all`
   (the plain `__except(EXECUTE_HANDLER)` shape). User-triggerable bugchecks closed on the way:
   the amd64 and arm64 syscall argument copies off an unmapped user stack, i386's (arguments are

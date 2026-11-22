@@ -1,8 +1,9 @@
 /* sysfbprobe — sysfb as a PnP display driver (docs/engineering/sysfb-pnp-design.md).
  *
  * Runs from the Startup folder, i.e. with win32k drawing through sysfb, and checks:
- *   step 1  every sysfb device node is started; a PCI one sits in the Display class (what
- *           Device Manager groups by); \\.\DISPLAY1 is attached to the desktop.
+ *   step 1  every sysfb device node is started and, once umpnpmgr has no install pending,
+ *           sits in the Display class (what Device Manager groups by); \\.\DISPLAY1 is
+ *           attached to the desktop.
  *   step 3  the instance driving the display refuses removal and disable (the desktop has
  *           it open), naming itself as the veto; the idle root instance, when the PCI one
  *           owns the display, goes through Device Manager's own disable and enable
@@ -130,6 +131,8 @@ static void visit(DEVINST dev)
             root = dev;
             strcpy(root_id, id);
             CHECK(up, "root instance %s not started (problem %lu)\n", id, problem);
+            CHECK(_stricmp(klass, DISPLAY_CLASS) == 0, "root instance %s is in class %s, not Display\n",
+                  id, klass[0] ? klass : "(none)");
         } else if (_strnicmp(id, "PCI\\", 4) == 0) {
             /* A second display controller fails start by design; the probe expects the one
              * QEMU has, which holds the GOP framebuffer. */
@@ -163,6 +166,17 @@ static void wait_plugplay(void)
         CloseServiceHandle(svc);
     if (scm)
         CloseServiceHandle(scm);
+}
+
+/* A freshly staged image installs its devices while the Startup folder runs: ClassGUID is
+ * written by the install, so read a node's class only once umpnpmgr reports none pending.
+ * On the Pi 5 the probe used to read the root instance first and saw no class at all. */
+static void wait_installs(void)
+{
+    DWORD t0 = GetTickCount();
+    DWORD ret = CMP_WaitNoPendingInstallEvents(300000);
+    SAY("pending device installs: wait -> %lu after %lu ms\n", ret, GetTickCount() - t0);
+    CHECK(ret == WAIT_OBJECT_0, "device installs still pending (wait -> %lu)\n", ret);
 }
 
 /* The owner refuses both ways in: a removal names it as the veto, a disable is vetoed. */
@@ -241,6 +255,7 @@ static void cycle_root(void)
 int main(void)
 {
     wait_plugplay();
+    wait_installs();
 
     /* ---- step 1: the device nodes ---- */
     DEVINST top;
