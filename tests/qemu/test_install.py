@@ -16,7 +16,17 @@ Two VMs over one disk image:
    turns that reboot into QEMU exiting, which is the end of the stage.
 2. The disk alone. It boots FreeLdr from the MBR, runs the second (GUI) stage, reboots
    on its own, and comes up to Explorer. This VM allows reboots, so the stage is one
-   serial stream across both boots, and the reboot count is checked.
+   serial stream across every boot, and the reboot count is checked.
+3. Opt-in (VIBEOS_INSTALL_PERSIST=1), inside stage 2, a third boot: the installed disk
+   is the one place the registry outlives a boot, so it carries `sysfbprobe persist`.
+   Between the stages the harness puts the probe
+   in ReactOS\\bin and points regtest.cmd (which unattend.inf's [GuiRunOnce] runs on the
+   first desktop) at it. The probe disables the idle root sysfb instance through setupapi
+   and reboots cleanly; on the third boot the device must come up disabled
+   (CM_PROB_DISABLED, CONFIGFLAG_DISABLED kept), and the probe enables it and reports.
+   Opt-in until it passes: as of 2026-11-22 the probe's wait for pending device installs
+   times out on the installed system (umpnpmgr never starts installing; see the lane doc
+   docs/engineering/active-lanes/msvcrt-from-pieces-plan.md, RESUME HERE).
 
 Media: a fresh `vibeos-cli build --arch <base arch>`. The test then builds `bootcdregtest`
 itself (an mkisofs over the same build tree, a minute or two), so the CD can never be
@@ -71,6 +81,15 @@ _DISK_SIZE = "4G"
 _SETUP_DONE = "[USETUP] installation succeeded"
 _SETUP_QUIT = "[USETUP] setup quit"
 _SMSS = "[SMSS] _main entered"
+_EXPLORER = "[EXPLORER] _tWinMain entered"
+# sysfbprobe's persist mode (tools/payloads/sysfbprobe): the verdict line, printed on the third
+# boot (or on the second, when it fails before rebooting).
+_PERSIST_DONE = "[SYSFBPROBE] done VERDICT="
+_PERSIST_PASS = "[SYSFBPROBE] done VERDICT=PASS"
+_PERSIST_FAIL = "[SYSFBPROBE] done VERDICT=FAIL"
+# Stage 3 runs only when asked: see the module docstring.
+_PERSIST = os.environ.get("VIBEOS_INSTALL_PERSIST") == "1"
+_INSTALLED_BOOTS = 3 if _PERSIST else 2
 
 
 def _firmware_args(arch: str, work_dir: Path) -> list[str]:
@@ -154,12 +173,14 @@ def _stage(arch: str, disk: Path, installed: bool) -> ArchConfig:
     config.memory = "1G"
     config.temp_disk = False  # the install disk must be disk 0 (unattend.inf)
     if installed:
-        config.boot_marker = "[EXPLORER] _tWinMain entered"
-        config.desktop_settle_seconds = 15.0
+        config.boot_marker = _PERSIST_DONE if _PERSIST else _EXPLORER
+        config.desktop_settle_seconds = 0.0 if _PERSIST else 15.0
         # GUI setup runs on the first boot -- with Explorer already up beside it (winlogon
         # spawns the shell without waiting for setup) -- and reboots when it finishes; the
-        # marker that counts is the desktop of the SECOND boot.
-        config.boots_required = 2  # type: ignore[attr-defined]
+        # marker that counts is the desktop of the SECOND boot -- or, with the persist stage,
+        # the second boot's desktop runs `sysfbprobe persist`, which reboots once more, and
+        # the marker is the probe's verdict on the THIRD boot.
+        config.boots_required = _INSTALLED_BOOTS  # type: ignore[attr-defined]
     else:
         config.boot_marker = _SETUP_DONE
         config.desktop_settle_seconds = 0.0
@@ -385,23 +406,78 @@ def _refresh_installed_files(arch: str, disk: Path, names: list[str]) -> None:
             outputs.setdefault(m.group(1).rsplit("/", 1)[-1].lower(), m.group(1))
     missing = sorted(wanted - set(outputs))
     assert not missing, f"VIBEOS_INSTALL_REFRESH: not built for the CD: {missing}"
-    raw = disk.with_suffix(".raw")
-    subprocess.run(["qemu-img", "convert", "-O", "raw", str(disk), str(raw)], check=True)
-    mbr = raw.read_bytes()[:512]
-    image = f"{raw}@@{int.from_bytes(mbr[446 + 8 : 446 + 12], 'little') * 512}"
-    env = {**os.environ, "MTOOLS_SKIP_CHECK": "1"}
-    tree = subprocess.run(
-        ["mdir", "-/", "-b", "-i", image, "::/ReactOS"], capture_output=True, text=True, env=env
-    ).stdout.splitlines()
+    tree = _mtools(
+        disk,
+        lambda image, env: subprocess.run(
+            ["mdir", "-/", "-b", "-i", image, "::/ReactOS"], capture_output=True, text=True, env=env
+        ).stdout.splitlines(),
+        write=False,
+    )
+    copies: list[tuple[str, str]] = []
     for name, src in outputs.items():
         # The build lists outputs at the canonical mount (tools/canon-run.sh).
         local = src.replace("/tmp/vibeos/", f"{PROJECT_DIR}/")
         targets = [t for t in tree if t.rsplit("/", 1)[-1].lower() == name]
         assert targets, f"VIBEOS_INSTALL_REFRESH: {name} is not installed on the disk"
-        for target in targets:
+        copies += [(local, target) for target in targets]
+    _mcopy_into(disk, copies)
+
+
+def _mtools(disk: Path, run, write: bool):
+    """Run `run(image, env)` against the installed disk's FAT partition through a raw copy
+    (mtools cannot read qcow2); with `write`, the raw image replaces the qcow2 afterwards."""
+    raw = disk.with_suffix(".raw")
+    subprocess.run(["qemu-img", "convert", "-O", "raw", str(disk), str(raw)], check=True)
+    try:
+        mbr = raw.read_bytes()[:512]
+        image = f"{raw}@@{int.from_bytes(mbr[446 + 8 : 446 + 12], 'little') * 512}"
+        result = run(image, {**os.environ, "MTOOLS_SKIP_CHECK": "1"})
+        if write:
+            subprocess.run(["qemu-img", "convert", "-O", "qcow2", str(raw), str(disk)], check=True)
+        return result
+    finally:
+        raw.unlink()
+
+
+def _mcopy_into(disk: Path, copies: list[tuple[str, str]]) -> None:
+    """Copy (local file, ::/target) pairs onto the installed disk, overwriting."""
+
+    def run(image: str, env: dict[str, str]) -> None:
+        for local, target in copies:
             subprocess.run(["mcopy", "-o", "-i", image, local, target], check=True, env=env)
-    subprocess.run(["qemu-img", "convert", "-O", "qcow2", str(raw), str(disk)], check=True)
-    raw.unlink()
+
+    _mtools(disk, run, write=True)
+
+
+def _arm_persist_probe(arch: str, disk: Path, work: Path) -> None:
+    """Stage 3's setup: `sysfbprobe persist` in ReactOS\\bin, started by regtest.cmd.
+
+    unattend.inf's [GuiRunOnce] runs regtest.cmd on the first desktop. Its stock body only
+    queues rosautotest, which the install image does not carry, so replacing it costs nothing.
+    The probe is built here, as the CD is, so it can never be older than this tree.
+    """
+    built = subprocess.run(
+        [
+            "bash",
+            str(PROJECT_DIR / "tools" / "payloads" / "sysfbprobe" / "build.sh"),
+            base_arch(arch),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    probe = PROJECT_DIR / "tools" / "payloads" / "sysfbprobe" / f"sysfbprobe-{base_arch(arch)}.exe"
+    assert built.returncode == 0 and probe.is_file(), (
+        f"building sysfbprobe failed:\n{built.stdout[-2000:]}{built.stderr[-2000:]}"
+    )
+    script = work / "regtest.cmd"
+    script.write_bytes(b'@echo off\r\n"%WINDIR%\\bin\\sysfbprobe.exe" persist\r\n')
+    _mcopy_into(
+        disk,
+        [
+            (str(probe), "::/ReactOS/bin/sysfbprobe.exe"),
+            (str(script), "::/ReactOS/bin/regtest.cmd"),
+        ],
+    )
 
 
 def _boot(config: ArchConfig, work: Path) -> tuple[QemuVM, str, str | None]:
@@ -470,7 +546,15 @@ def _wait_marker(vm: QemuVM) -> str:
     while True:
         try:
             out = seen + vm.serial.read_until(config.boot_marker, timeout=20)
-            if out.count(_SMSS) < need:
+            # The marker may be a verdict prefix ("... VERDICT="): read the rest of its line,
+            # so the caller sees PASS or FAIL, and so a verdict of failure ends the stage on
+            # whichever boot printed it -- a persist probe that fails before its reboot leaves
+            # no further boot to wait for.
+            try:
+                out += vm.serial.read_until("\n", timeout=10)
+            except (TimeoutError, ConnectionError):
+                pass
+            if out.count(_SMSS) < need and _PERSIST_FAIL not in out:
                 seen = out
                 continue
         except TimeoutError:
@@ -602,7 +686,9 @@ def test_unattended_install_then_boot(arch: str, install_disk: Path) -> None:
         )
         assert _SETUP_QUIT not in serial, f"setup quit instead of installing: pages={pages}"
 
-    # --- stage 2: the installed disk, GUI setup, then the desktop -----------------------
+    # --- stage 2: the installed disk, GUI setup, the desktop, then the persist reboot -----
+    if _PERSIST:
+        _arm_persist_probe(arch, install_disk, root)
     vm, serial, failure = _boot(_stage(arch, install_disk, installed=True), root / "installed")
     try:
         if failure is not None:
@@ -625,9 +711,16 @@ def test_unattended_install_then_boot(arch: str, install_disk: Path) -> None:
         )
     elif _fatal(serial) is not None:
         problems.append(f"stage 2: fatal marker {_fatal(serial)!r} in the installed boot")
-    elif boots != 2:
-        # GUI setup on the first boot, the desktop on the second. One boot means the second
-        # stage never ran (the hive still said setup was done); more than two is a reboot
-        # loop that happened to reach Explorer.
-        problems.append(f"stage 2: expected 2 boots (GUI setup, desktop), saw {boots}")
+    elif _EXPLORER not in serial:
+        problems.append("stage 2: the installed system never reached Explorer")
+    elif _PERSIST and _PERSIST_PASS not in serial:
+        verdict = serial[serial.rfind(_PERSIST_DONE) :].split("\n", 1)[0]
+        probe = "\n".join(ln for ln in serial.splitlines() if "[SYSFBPROBE]" in ln)
+        problems.append(f"stage 3: the persist probe reported {verdict!r}:\n{probe}")
+    elif boots != _INSTALLED_BOOTS:
+        # GUI setup on the first boot, the desktop and the probe's disable on the second,
+        # its verdict on the third. Fewer means a stage never ran (the hive still said setup
+        # was done, or the probe never rebooted); more is a reboot loop.
+        stages = "GUI setup, desktop + disable, persist check" if _PERSIST else "GUI setup, desktop"
+        problems.append(f"stage 2: expected {_INSTALLED_BOOTS} boots ({stages}), saw {boots}")
     assert not problems, "\n\n".join(problems)
