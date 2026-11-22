@@ -1,31 +1,34 @@
 # Lane: graviton-spike — our ARM64 on real ARM64
 
-> **RESUME HERE (2026-11-21).** This worktree carries the Chrome-on-vibeos work (amd64,
-> `--payload chrome`, staged via `VIBEOS_CHROME_DIR`; build the media with
-> `VIBEOS_PAYLOAD=chrome` too or the smoke refuses it). Landed 2026-11-21: `vibeos-cli sym`
-> resolves kernel addresses (`--serial`/`--kernel-base`/`--image`), and the `-smp 4` Chrome
-> wedge fix (iomgr took `ApcQueueLock` with a plain spinlock; new rule
-> `scan_queued_lock_plain_acquire`). The November "Ready for 5-20 s" stall is explained: the
-> smoke has ONE vCPU and the boot's companion apps (gui64/win64, osk, magnify, taskmgr) keep
-> it busy, so priority 6-7 Chrome threads wait for the 300-tick starvation boost (registry
-> entry). TEMP diagnostics (`[STARVE]`, `[CTXWAIT]`, RQ5A stamps) stay parked on branch
-> `graviton-diag-ctxwait` @ `a09f763602a`, not for landing. Owed:
-> 1. (done 2026-11-21) `vibeos-cli sym` declines a kernel-half address outside the kernel
->    image, and a `--serial` log older than the tree's kernel unless `--image` is passed.
-> 2. RQ5A (smp-bringup's §9.56 guard): settle false positive vs. real double-link with a
+> **RESUME HERE (2026-11-22, fleet parked until next weekend).** This worktree carries the
+> Chrome-on-vibeos work (amd64, `--payload chrome`, Chrome staged via `VIBEOS_CHROME_DIR`;
+> build the media with `VIBEOS_PAYLOAD=chrome` too or the smoke refuses it; boot it WITH the
+> network, see 5). Everything is landed (master `d6de9cac1d2`); the worktree is clean.
+> Landed this weekend: the `-smp 4` Chrome wedge (iomgr's plain spinlock on `ApcQueueLock`;
+> rule `scan_queued_lock_plain_acquire`); `vibeos-cli sym` for kernel and driver addresses
+> (`[MODBASE]` lines); the Chrome payload boots QUIET (`test: quiet: true`); the sweep's
+> end-of-run CPU table and the `idlewatch` payload; WOW64 `WM_COPYDATA` sends and
+> `Wow64GetThreadContext` on another thread; sandbox steps 1-3 (ACG, kernelbase in every
+> process + `AppContainerRegisterSid`, restricted-token handle access; rule
+> `scan_null_out_param`). The November "Ready for 5-20 s" stall was one-vCPU saturation by
+> winlogon's applets (registry entry). Evidence: `~/vibeos-graviton-artifacts/
+> 20261122-chrome-sandbox-runs/` (one tar.gz per run cited in the registry, quest doc and
+> commits: summary, payload serial logs, hang CPU state). TEMP diagnostics (`[STARVE]`,
+> `[CTXWAIT]`, RQ5A stamps) stay parked on branch `graviton-diag-ctxwait` @ `a09f763602a`,
+> not for landing. Next, in order:
+> 1. **Sandbox step 4, token integrity levels** ([chrome-sandbox-quest.md](../chrome-sandbox-quest.md)):
+>    the sandboxed browser's GPU process still fails with ResultCode 49 because
+>    `TokenIntegrityLevel` query/set and `TokenLogonSid` are unimplemented (`tokprobe`).
+>    A label must say "not enforced" until the access check has the no-write-up rule.
+> 2. netstack BUGCHECK 0xA in the TCP receive bridge (registry entry; 1 in ~20 boots).
+> 3. RQ5A (smp-bringup's §9.56 guard): settle false positive vs. real double-link with a
 >    pre-`RemoveEntryList` neighbour check at the 9002 site; hand them a tested diff.
-> 3. (done 2026-11-22) osk/magnify load: timer polling by design, made costly by software
->    GDI under TCG; the Chrome payload boots QUIET. Found and fixed on the way: WOW64
->    `WM_COPYDATA` sends, `Wow64GetThreadContext` on another thread. Tools: `idlewatch`
->    payload, x86 frames in the sweep's thread dump, `[MODBASE]` + `sym` for driver addresses.
->    OWED: the generated WOW64 struct marshallers (tools/vibeos-codegen `marshal`) SIGN-extend
->    pointer and ULONG_PTR fields (`WowCbSx`), which is right for handles but turns a
->    large-address-aware guest's buffer at or above 2 GiB into a kernel-half address.
-> 4. The sandbox quest: started 2026-11-22, see
->    [chrome-sandbox-quest.md](../chrome-sandbox-quest.md). Steps 1-3 done; step 4, token
->    integrity levels, is next. Boot the Chrome payload WITH network.
-> 5. netstack BUGCHECK 0xA in the TCP receive bridge (registry entry).
-> 6. dhcpcsvc ApiCriticalSection deadlock after a Chrome hang, `--no-net` only (registry entry).
+> 4. The generated WOW64 struct marshallers (tools/vibeos-codegen `marshal`) SIGN-extend
+>    pointer and ULONG_PTR fields (`WowCbSx`): right for handles, wrong for a
+>    large-address-aware guest's buffer at or above 2 GiB.
+> 5. On watch: the `--no-net` dhcpcsvc deadlock after a Chrome hang did not reproduce after
+>    cpp-cluster's re-port (3/3 clean). If it returns, the "Deadlock: 0x..." line names the
+>    owner; send the run to cpp-cluster. Until settled, boot the Chrome payload with network.
 > Loading over the network is done (Chrome rung 2, `34e17dfff6e`).
 
 > **2026-09-20: superseded for active work.** The owner chose direct bare-metal
