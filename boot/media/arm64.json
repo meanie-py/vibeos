@@ -822,6 +822,7 @@
    ["reactos/system32/user32.dll", "cell:win32ss/user/user32/user32.dll"],
    ["reactos/system32/user32_vista.dll", "cell:win32ss/user/user32_vista/user32_vista.dll"],
    ["reactos/system32/winsrv.dll", "cell:win32ss/user/winsrv/winsrv.dll"],
+   ["reactos/system32/win32u.dll", "cell:win32ss/win32u/win32u.dll"],
    ["reactos/system32/win32k.sys", "cell:win32ss/win32k.sys"],
    ["reactos/registry.inf", "build:boot/bootdata/registry.inf"],
    ["reactos/SETUPREG.HIV", "build:boot/bootdata/SETUPREG.HIV"],
@@ -1645,6 +1646,7 @@
    ["reactos/system32/user32.dll", "cell:win32ss/user/user32/user32.dll"],
    ["reactos/system32/user32_vista.dll", "cell:win32ss/user/user32_vista/user32_vista.dll"],
    ["reactos/system32/winsrv.dll", "cell:win32ss/user/winsrv/winsrv.dll"],
+   ["reactos/system32/win32u.dll", "cell:win32ss/win32u/win32u.dll"],
    ["reactos/system32/win32k.sys", "cell:win32ss/win32k.sys"],
    ["reactos/registry.inf", "build:boot/bootdata/registry.inf"],
    ["reactos/SETUPREG.HIV", "build:boot/bootdata/SETUPREG.HIV"],
@@ -2775,7 +2777,7 @@
    ["reactos/system32/user32.dll", "cell:win32ss/user/user32/user32.dll"],
    ["reactos/system32/user32_vista.dll", "cell:win32ss/user/user32_vista/user32_vista.dll"],
    ["reactos/system32/winsrv.dll", "cell:win32ss/user/winsrv/winsrv.dll"],
-   ["reactos/system32/win32u.dll", "build:win32ss/win32u/win32u.dll"],
+   ["reactos/system32/win32u.dll", "cell:win32ss/win32u/win32u.dll"],
    ["reactos/system32/win32k.sys", "cell:win32ss/win32k.sys"],
    ["reactos/system32/config/system", "build:boot/bootdata/system"],
    ["reactos/system32/config/software", "build:boot/bootdata/software"],
@@ -3787,7 +3789,7 @@
    ["cell:win32ss/user/user32/user32.dll", "2"],
    ["cell:win32ss/user/user32_vista/user32_vista.dll", "2"],
    ["cell:win32ss/user/winsrv/winsrv.dll", "2"],
-   ["build:win32ss/win32u/win32u.dll", "2"],
+   ["cell:win32ss/win32u/win32u.dll", "2"],
    ["cell:win32ss/win32k.sys", "2"]
   ]
 }}

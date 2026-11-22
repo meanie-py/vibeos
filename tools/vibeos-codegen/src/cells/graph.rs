@@ -2064,7 +2064,11 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
                     .ok_or_else(|| Error::new(format!("{target}: a .def without a spec2def()")))?
             };
             cell.spec = Some((rel(root, &cmake_dir.join(&cap[2]))?, cap[1].into()));
-        } else if name.ends_with(".c.obj") || re(r"\.(cpp|cxx|cc)\.obj$").is_match(name) {
+        } else if name.ends_with(".c.obj")
+            || re(r"\.(cpp|cxx|cc)\.obj$").is_match(name)
+            // A source `.S` (win32u's sys-stubs.S) replays like C: its recipe line is `asm`.
+            || re(r"\.[sS]\.obj$").is_match(name)
+        {
             // C++ compiles the same way: the cell replays cmake's compile command through a
             // clib recipe, whose `cxx` lines reactos-link runs with the cxx.<arch>.flags template.
             let mut src = obj_source(&cmake_dir, obj);
