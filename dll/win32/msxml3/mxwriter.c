@@ -2895,6 +2895,26 @@ static HRESULT WINAPI MXAttributes_setQName(IMXAttributes *iface, int index, BST
     return S_OK;
 }
 
+#ifdef __REACTOS__
+/* msxml2.idl declares setType between setQName and setURI. Without it, every slot after
+ * setQName in MXAttributesVtbl was shifted down by one (a client's setType ran setURI) and
+ * the last, setValue, was NULL. */
+static HRESULT WINAPI MXAttributes_setType(IMXAttributes *iface, int index, BSTR type)
+{
+    mxattributes *This = impl_from_IMXAttributes( iface );
+    mxattribute *attr;
+
+    TRACE("(%p)->(%d %s)\n", This, index, debugstr_w(type));
+
+    if (!(attr = get_attribute_byindex(This, index))) return E_INVALIDARG;
+
+    SysFreeString(attr->type);
+    attr->type = SysAllocString(type);
+
+    return S_OK;
+}
+#endif
+
 static HRESULT WINAPI MXAttributes_setURI(IMXAttributes *iface, int index, BSTR uri)
 {
     mxattributes *This = impl_from_IMXAttributes( iface );
@@ -2941,6 +2961,9 @@ static const IMXAttributesVtbl MXAttributesVtbl = {
     MXAttributes_setAttributes,
     MXAttributes_setLocalName,
     MXAttributes_setQName,
+#ifdef __REACTOS__
+    MXAttributes_setType,
+#endif
     MXAttributes_setURI,
     MXAttributes_setValue
 };
