@@ -4341,7 +4341,7 @@ pub unsafe extern "C" fn ClassQueueCapacityChangedEventWorker(DeviceObject: PDEV
 
             IoQueueWorkItem(
                 work_item,
-                Some(abi_cast!(ClassLogCapacityChangedProcess)),
+                Some(ClassLogCapacityChangedProcess),
                 DelayedWorkQueue,
                 (work_item).cast(),
             );
@@ -4371,7 +4371,7 @@ pub unsafe extern "C" fn ClassQueueProvisioningTypeChangedEventWorker(DeviceObje
             ClassAcquireRemoveLock(DeviceObject, workItem as *mut _IRP);
             IoQueueWorkItem(
                 workItem,
-                Some(abi_cast!(ClassLogProvisioningTypeChangedEvent)),
+                Some(ClassLogProvisioningTypeChangedEvent),
                 DelayedWorkQueue,
                 workItem as *mut core::ffi::c_void,
             );
@@ -4666,7 +4666,7 @@ pub unsafe extern "C" fn ClasspQueueLogIOEventWithContextWorker(
 
         ClassAcquireRemoveLock(DeviceObject, workItem as PIRP);
 
-        IoQueueWorkItem(workItem, Some(abi_cast!(ClasspLogIOEventWithContext)), DelayedWorkQueue, ioLogMessageContextHeader as PVOID);
+        IoQueueWorkItem(workItem, Some(ClasspLogIOEventWithContext), DelayedWorkQueue, ioLogMessageContextHeader as PVOID);
         success = true;
         break 'outer;
     }

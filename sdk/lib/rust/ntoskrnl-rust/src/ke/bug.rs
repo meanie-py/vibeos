@@ -896,7 +896,7 @@ unsafe fn KiDisplayBlueScreen(
             Message,
             &mut KiBugCheckData[1] as *mut _ as PVOID as PULONG_PTR,
             4,
-            core::mem::transmute::<_, PKE_BUGCHECK_UNICODE_TO_ANSI>(KeBugCheckUnicodeToAnsi as usize),
+            core::mem::transmute::<_, PKE_BUGCHECK_UNICODE_TO_ANSI>(KeBugCheckUnicodeToAnsi as *const () as usize),
         );
     }
 }
@@ -1325,7 +1325,7 @@ pub unsafe extern "system" fn KeBugCheckWithTf(
                 AnsiName.as_mut_ptr(),
                 &mut Pc as *mut _ as PULONG_PTR,
                 1,
-                core::mem::transmute::<_, PKE_BUGCHECK_UNICODE_TO_ANSI>(KeBugCheckUnicodeToAnsi as usize),
+                core::mem::transmute::<_, PKE_BUGCHECK_UNICODE_TO_ANSI>(KeBugCheckUnicodeToAnsi as *const () as usize),
             );
         }
     }

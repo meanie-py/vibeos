@@ -374,7 +374,7 @@ pub fn rust_swprintf(dst: *mut u16, cap_chars: usize, fmt: &[u16], slots: &[u64]
 // Silence unused-warning when KdbOutputAborted_get isn't linked in some
 // build configurations.
 #[allow(dead_code)]
-fn _force_link() -> usize { rust_kdb_printf as usize }
+fn _force_link() -> usize { rust_kdb_printf as *const () as usize }
 
 // We need a placeholder so `c_void` import isn't dead. Real callers use it
 // transitively through pointer slots.

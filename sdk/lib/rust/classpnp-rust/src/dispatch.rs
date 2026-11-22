@@ -28,7 +28,7 @@ pub unsafe extern "C" fn ClassInitializeDispatchTables(DriverExtension: *mut _CL
 
     let mut idx: usize = 0;
     while idx <= IRP_MJ_MAXIMUM_FUNCTION as usize {
-        core::ptr::write_volatile(table.add(idx), Some(abi_cast!(ClassDispatchUnimplemented)));
+        core::ptr::write_volatile(table.add(idx), Some(ClassDispatchUnimplemented));
         idx = idx.wrapping_add(1);
     }
 

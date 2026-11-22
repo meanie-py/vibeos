@@ -46,10 +46,15 @@ Landed or queued: fbd8609ed87 (KdMap/KdUnmap Vista arity), 41af4775376 (86 -> `S
 096af492bbe (hal's last 12; bushndlr's wrong HalpAssignSlotResources declaration,
 bussupp's PCI re-declarations), 5704afee869 (63 kernel/csrss; the OB close methods took
 ULONG for ULONG_PTR).
-**The 40 left** (ntoskrnl 19, rtl-threadpool 10, fstub 4, kd64 2, dbgprint/ex/fsrtl/iomgr/kd
-1 each) are mostly deliberate address uses: `KiTrap08 as ULONG` into a TSS Eip, IDT
-offsets, `_force_link() -> usize`. They want `f as *const () as usize` (keep the i386
-`as ULONG` narrowing explicit), not a type check. Re-count on a warm i386 build afterwards.
+**The last 40 are done (e43339124f6): 159 -> 0**, measured on a warm i386 build with the
+nightly. abi_cast! (5 copies of the same usize transmute) is retired: its 69 uses are
+`Some(f)`. 36 deliberate address uses take `f as *const () as <int>`.
+**Next LOGIC work** (from the 2026-11-22 full census): unexpected_cfgs 71, clashing_extern
+67, unused_assignments 62, unreachable_code 11, forgetting_copy_types 11 (iomgr),
+unpredictable_function_pointer_comparisons 6, unused_must_use 3 (d3d9),
+unreachable_patterns 2. Mostly kernel bodies (freeldr, hal, ntoskrnl, cabinet, ks).
+Re-run the full census first: the fn-cast work moved code.
+
 **Recipe for callback slots** (already applied): rewrite to `Some(f)`, compile every
 target and feature combination, restore the lines that fail, inspect each failure. It is
 either a nominal pointer type (typed `transmute::<real fn type, _>`) or a WRONG

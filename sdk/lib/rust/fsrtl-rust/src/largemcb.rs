@@ -173,7 +173,7 @@ pub unsafe extern "system" fn FsRtlAddBaseMcbEntry(
     needle_run.RunStartVbn.QuadPart = node.RunStartVbn.QuadPart - 1;
     needle_run.RunEndVbn.QuadPart = needle_run.RunStartVbn.QuadPart + 1;
     needle_run.StartingLbn.QuadPart = !0u64 as i64;
-    (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingIntersectCompare));
+    (*(*mcb).Mapping).Table.CompareRoutine = Some(McbMappingIntersectCompare);
     let lower_run =
         RtlLookupElementGenericTable(&mut (*(*mcb).Mapping).Table, &needle_run as *const _ as PVOID)
             as PLARGE_MCB_MAPPING_ENTRY;
@@ -184,24 +184,24 @@ pub unsafe extern "system" fn FsRtlAddBaseMcbEntry(
     {
         node.RunStartVbn.QuadPart = (*lower_run).RunStartVbn.QuadPart;
         node.StartingLbn.QuadPart = (*lower_run).StartingLbn.QuadPart;
-        (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingCompare));
+        (*(*mcb).Mapping).Table.CompareRoutine = Some(McbMappingCompare);
         RtlDeleteElementGenericTable(&mut (*(*mcb).Mapping).Table, lower_run as PVOID);
         (*mcb).PairCount -= 1;
     }
 
     needle_run.RunStartVbn.QuadPart = node.RunEndVbn.QuadPart;
     needle_run.RunEndVbn.QuadPart = needle_run.RunStartVbn.QuadPart + 1;
-    (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingIntersectCompare));
+    (*(*mcb).Mapping).Table.CompareRoutine = Some(McbMappingIntersectCompare);
     let higher_run =
         RtlLookupElementGenericTable(&mut (*(*mcb).Mapping).Table, &needle_run as *const _ as PVOID)
             as PLARGE_MCB_MAPPING_ENTRY;
     if !higher_run.is_null() && (node.StartingLbn.QuadPart <= (*higher_run).StartingLbn.QuadPart) {
         node.RunEndVbn.QuadPart = (*higher_run).RunEndVbn.QuadPart;
-        (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingCompare));
+        (*(*mcb).Mapping).Table.CompareRoutine = Some(McbMappingCompare);
         RtlDeleteElementGenericTable(&mut (*(*mcb).Mapping).Table, higher_run as PVOID);
         (*mcb).PairCount -= 1;
     }
-    (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingCompare));
+    (*(*mcb).Mapping).Table.CompareRoutine = Some(McbMappingCompare);
 
     RtlInsertElementGenericTable(
         &mut (*(*mcb).Mapping).Table,
@@ -311,9 +311,9 @@ pub unsafe extern "system" fn FsRtlInitializeBaseMcb(OpaqueMcb: PBASE_MCB, PoolT
     (*mcb).MaximumPairCount = MAXIMUM_PAIR_COUNT;
     RtlInitializeGenericTable(
         &mut (*(*mcb).Mapping).Table,
-        Some(abi_cast!(McbMappingCompare)),
-        Some(abi_cast!(McbMappingAllocate)),
-        Some(abi_cast!(McbMappingFree)),
+        Some(McbMappingCompare),
+        Some(McbMappingAllocate),
+        Some(McbMappingFree),
         mcb as PVOID,
     );
 }
@@ -588,7 +588,7 @@ pub unsafe extern "system" fn FsRtlRemoveBaseMcbEntry(
     needle_run.RunEndVbn.QuadPart = Vbn + SectorCount;
     needle_run.StartingLbn.QuadPart = -1;
 
-    (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingIntersectCompare));
+    (*(*mcb).Mapping).Table.CompareRoutine = Some(McbMappingIntersectCompare);
     loop {
         let haystack_run = RtlLookupElementGenericTable(
             &mut (*(*mcb).Mapping).Table,
@@ -612,7 +612,7 @@ pub unsafe extern "system" fn FsRtlRemoveBaseMcbEntry(
                 tail_run.StartingLbn.QuadPart = (*haystack_run).StartingLbn.QuadPart
                     + (needle_run.RunEndVbn.QuadPart - (*haystack_run).RunStartVbn.QuadPart);
 
-                (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingCompare));
+                (*(*mcb).Mapping).Table.CompareRoutine = Some(McbMappingCompare);
 
                 RtlInsertElementGenericTable(
                     &mut (*(*mcb).Mapping).Table,
@@ -622,7 +622,7 @@ pub unsafe extern "system" fn FsRtlRemoveBaseMcbEntry(
                 );
                 (*mcb).PairCount += 1;
 
-                (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingIntersectCompare));
+                (*(*mcb).Mapping).Table.CompareRoutine = Some(McbMappingIntersectCompare);
             }
         } else if (*haystack_run).RunEndVbn.QuadPart > needle_run.RunEndVbn.QuadPart {
             let haystack_run_start = (*haystack_run).RunStartVbn.QuadPart;
@@ -640,7 +640,7 @@ pub unsafe extern "system" fn FsRtlRemoveBaseMcbEntry(
                 head_run.RunEndVbn.QuadPart = needle_run.RunStartVbn.QuadPart;
                 head_run.StartingLbn.QuadPart = haystack_starting_lbn;
 
-                (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingCompare));
+                (*(*mcb).Mapping).Table.CompareRoutine = Some(McbMappingCompare);
 
                 RtlInsertElementGenericTable(
                     &mut (*(*mcb).Mapping).Table,
@@ -650,16 +650,16 @@ pub unsafe extern "system" fn FsRtlRemoveBaseMcbEntry(
                 );
                 (*mcb).PairCount += 1;
 
-                (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingIntersectCompare));
+                (*(*mcb).Mapping).Table.CompareRoutine = Some(McbMappingIntersectCompare);
             }
         } else {
-            (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingCompare));
+            (*(*mcb).Mapping).Table.CompareRoutine = Some(McbMappingCompare);
             RtlDeleteElementGenericTable(&mut (*(*mcb).Mapping).Table, haystack_run as PVOID);
             (*mcb).PairCount -= 1;
-            (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingIntersectCompare));
+            (*(*mcb).Mapping).Table.CompareRoutine = Some(McbMappingIntersectCompare);
         }
     }
-    (*(*mcb).Mapping).Table.CompareRoutine = Some(abi_cast!(McbMappingCompare));
+    (*(*mcb).Mapping).Table.CompareRoutine = Some(McbMappingCompare);
 
     result
 }

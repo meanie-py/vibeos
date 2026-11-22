@@ -14,20 +14,6 @@
 #![allow(unused_mut)]
 #![allow(unused_imports)]
 
-/// Cast an `extern "system"` fn to a target callback ABI (i386 stdcall vs
-/// amd64/arm64 C — identical machine code, distinct Rust types). Copied from
-/// ntoskrnl-rust's crate-root macro: 5 fsrtl files invoke it, and crate-root
-/// macros are invisible to a `crate::`/`use` extraction audit (hidden-coupling
-/// class #2). TODO: hoist the shared kernel macros (abi_cast, dbg_print, …) into
-/// ntkrnl-sys or an ntos-macros crate so extracted crates share one definition —
-/// see docs/engineering/ntoskrnl-crate-split-plan.md.
-#[allow(unused_macros)]
-macro_rules! abi_cast {
-    ($func:expr) => {
-        unsafe { core::mem::transmute($func as usize) }
-    };
-}
-
 pub mod global_barrier;
 
 pub mod dbcsname;

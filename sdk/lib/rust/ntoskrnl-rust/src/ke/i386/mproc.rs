@@ -216,7 +216,7 @@ pub unsafe extern "system" fn KeStartAllProcessors() {
         (*ProcessorState).SpecialRegisters.Tr = KGDT_TSS;
 
         (*ProcessorState).ContextFrame.Esp = KernelStack as ULONG_PTR as ULONG;
-        (*ProcessorState).ContextFrame.Eip = KiSystemStartup as ULONG_PTR as ULONG;
+        (*ProcessorState).ContextFrame.Eip = KiSystemStartup as *const () as ULONG_PTR as ULONG;
         (*ProcessorState).ContextFrame.EFlags = (__readeflags() & !EFLAGS_INTERRUPT_MASK) as ULONG;
 
         (*ProcessorState).ContextFrame.Esp = ((*ProcessorState).ContextFrame.Esp as usize 

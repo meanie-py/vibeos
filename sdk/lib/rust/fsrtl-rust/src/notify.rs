@@ -398,7 +398,7 @@ unsafe fn FsRtlNotifySetCancelRoutine(
         if (*irp).Cancel != 0 {
             FsRtlCancelNotify(core::ptr::null_mut(), irp);
         } else {
-            IoSetCancelRoutine(irp, Some(abi_cast!(FsRtlCancelNotify)));
+            IoSetCancelRoutine(irp, Some(FsRtlCancelNotify));
             IoReleaseCancelSpinLock((*irp).CancelIrql);
         }
     }
