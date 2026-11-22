@@ -98,6 +98,7 @@ PORTED = frozenset(
         "scan_winerror_consts",
         "scan_inline_flag_literals",
         "scan_comment_swallowed_code",
+        "scan_guard_drop_late",
         "scan_formatless_printf",
         "scan_ptr_typedef_cast_read",
         "scan_call_arg_swap",

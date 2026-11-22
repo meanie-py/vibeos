@@ -1,0 +1,3 @@
+# shellfind (arm64), from cmake's compile of it: tools/cargo_cell_gen.py --clib-recipes
+cxx	dll/win32/browseui/shellfind/CSearchBar.cpp	@build/dll/win32/browseui/shellfind dll/win32/browseui/shellfind @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/atl	@core -fno-exceptions	UNICODE WINVER=0x502 _ATL_NO_EXCEPTIONS _UNICODE _WIN32_WINNT=0x502
+cxx	dll/win32/browseui/shellfind/CFindFolder.cpp	@build/dll/win32/browseui/shellfind dll/win32/browseui/shellfind @std sdk/lib/pseh/include vendor/opengl-headers/include vendor/libdxg/include sdk/lib/atl	@core -fno-exceptions	UNICODE WINVER=0x502 _ATL_NO_EXCEPTIONS _UNICODE _WIN32_WINNT=0x502

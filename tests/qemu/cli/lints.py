@@ -1199,6 +1199,10 @@ def source_lint_specs(repo: Path) -> list[tuple]:
     # (native Rust rule, tools/vibeos-lint/src/rules/devobj_as_extension.rs): six classpnp sites
     # wrote the release-queue spinlock into the device object. Gated at zero.
     specs.append(("scan_devobj_as_extension", ["MISSING"], "stdout"))
+    # A `// [guard-drop] <C release>` marker followed by more work before the guard's scope ends
+    # (native Rust rule, tools/vibeos-lint/src/rules/guard_drop_late.rs): rmap.rs freed pool
+    # under the PFN lock the C had released, an i386 SPECIALPOOL=* 0x0F. Gated at zero.
+    specs.append(("scan_guard_drop_late", ["MISSING"], "stdout"))
     # KeQuerySystemTime expanded as a typed u64 read of KUSER_SHARED_DATA.SystemTime (+0x14,
     # 4-aligned), or through an invented zeroed `SharedSystemTime` global (native Rust rule,
     # tools/vibeos-lint/src/rules/shared_system_time.rs). Armed usb/ksecdd bugchecked on it.

@@ -761,6 +761,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "browseui-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "bthci-cargo"
 version = "0.1.0"
 dependencies = [
@@ -3133,6 +3141,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "explorer-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "explorer-rust"
 version = "0.1.0"
 dependencies = [
@@ -3217,6 +3233,14 @@ dependencies = [
 
 [[package]]
 name = "feclient-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "filebrowser-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-lean",
@@ -7995,6 +8019,14 @@ dependencies = [
 
 [[package]]
 name = "rsaenh-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "rshell-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-lean",

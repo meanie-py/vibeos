@@ -612,7 +612,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   Next: a `farm` run of amd64-bios, to get a rate and a second sample.
 
 - **arm64: committed memory faults under concurrent system-process allocation (open,
-  intermittent, found 2026-11-08, upstream-sync lane; owner unassigned, MM).** kmtest
+  intermittent, found 2026-11-08; owner: conformance lane since 2026-11-21, MM).** kmtest
   ZwAllocateVirtualMemory's `SystemProcessTestWorker` runs two system threads that allocate in
   the system process at the same time. One of them got STATUS_SUCCESS committing a chunk, then
   faulted with 0xC0000005 both writing it (`.c:90`) and reading it back (`.c:76`, `Match = 0`
@@ -620,7 +620,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`/tmp/vibeos-cli/20261108-074334-c9UMvk-conformance-arm64`); the retry passed, and the
   batch (shell32 d3dwine) touches no MM. Seen again in batch 165's gate
   (`/tmp/vibeos-cli/20261108-095623-oBpdmQ-conformance-arm64`, same three lines, passed on
-  retry): 2 of 5 gates. The signature points to a race between concurrent
+  retry): 2 of 5 gates. Third sighting in batch 178's gate (2026-11-21,
+  `/tmp/vibeos-cli/20261121-204507-E0MV1s-conformance-arm64`, same `.c:76/90/93`, passed on
+  retry), preserved at
+  `~/vibeos-flake-farm/fails/auto/20261121-204507-DGwlpE-conformance-arm64-clean-but-ratchet-regression`.
+  That red read only "native controller exited 1" until the runner learned to name the
+  regression from the rounds. **Not reproduced on an idle host (2026-11-21): 0 of 20** runs
+  of the test alone on a fresh boot (`20261121-213950-cpoLef-conformance-arm64`, each fails
+  only the baselined `.c:145/246`), and **0 of 6** full sweeps
+  (`conformance --arch arm64 --repeat 6`, `20261121-214937-c1A6Nr`). Same config as the gate
+  (smp 0, MP kernel); the difference is load: the gate's failing sweep took 105 s against
+  69-89 s idle, because the gate boots three arches at once. A 6-round soak beside a
+  live gate (`20261121-221311-moK2xM`, load average 24.6 falling to 7.6) was also clean, but
+  only its first round (125 s) ran under gate-like load: 0 of 32 samples overall. So it is
+  timing-dependent; the next repro is a soak under SUSTAINED host load (run the arm64 repeat beside the other arches'
+  sweeps), then a tripwire on the commit/fault path. The signature points to a race between concurrent
   commits in one process (PTE or page-table population, or the VAD), not to address-space
   layout. It is unrelated to 56755a2a231 (kernel32's user-mode sort-table mapping). Next:
   `farm --arches arm64` on the conformance payload to get a rate, then a tripwire on that
@@ -1010,19 +1024,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   at 29-54, below `COMMIT_CHECKED_CHUNKS` (3 passes per checked chunk). The arm64 floor is 570,
   the most that race can cost (`a5f44ee4fcd`, header note). Why the order flipped is NOT
   explained; a scheduling change from the NT 10.0 client-scheduler move is the first suspect.
-- **i386 under `SPECIALPOOL=*` bugchecks `0x0F` SPIN_LOCK_ALREADY_OWNED in boot (open, found
-  2026-10-19, research).** Every allocation routed to special pool; i386 stops right after
-  `IopInitializeSystemDrivers` / `PiEnumerateDevice HTREE\ROOT\0`. Parameter 1 is lock
-  `0x80741810` (`ntoskrnl.exe+0x286810`, which the symbolizer puts inside kdbg-rust's
-  `KdbStack`, so an unnamed lock in .data next to it). Then a second `0x1E` (0xC0000028), and the
-  `[DBLFAULT]` EBP walk recurses through `_SehExceptHandler`/`RemoveFromWsList`, which looks
-  like the fault handler re-entering, not the original fault. amd64 and arm64 boot to the
-  desktop with the same tripwire. NOT handle biasing: the branch's pre-biasing tree
-  (`f759caa734a` + the self-test fix) fails identically, the same lock address included
-  (`20261031-221917-yzvuu66y` base, `20261031-221917-vxinhkgd` branch), and neither the NT 10.0
-  flip: master `a319085fd99` plus only that self-test fix fails the same way, same lock
-  (`20261031-225210-_q82pnkv`). No i386 `SPECIALPOOL=*` run existed before these; until
-  `74ba9bd59e4` the boot self-test failed every `*` run first, so this has been latent on master.
+- **i386 under `SPECIALPOOL=*` bugchecked `0x0F` SPIN_LOCK_ALREADY_OWNED in boot (FIXED
+  2026-11-21, research; found 2026-10-19).** `MmDeleteSectionAssociation` freed its rmap entry
+  under the PFN lock. rmap.c releases the lock first, but the Rust's lock-guard conversion had
+  kept it until return. A lookaside spill goes to `MmFreeSpecialPool`, which takes the PFN lock
+  itself. The `[DBLFAULT]` stack that pointed at cdfs came from a second 0x0F raised while
+  unwinding the first. i386 `KeBugCheckEx` now walks the caller's EBP chain for bugchecks
+  without a trap frame, and that walk showed the real path. A tree-wide scan found one more of
+  the class: MmAccessFault waited at APC_LEVEL. `scan_guard_drop_late` now gates it. Also
+  fixed: `SPECIALPOOL=*` on amd64 and arm64 had panicked in classpnp since `78bbf7aae1a`,
+  because special pool ignored the device-extension cache alignment; it is now sized so the
+  extension lands aligned. All three arches reach the desktop under `SPECIALPOOL=*` (amd64
+  `20261121-231032-gbO7DV`, arm64 `20261121-231558-zGbeTn`, i386 `20261121-232125-cN2TdS`).
 - **i386 double fault `0x7F/8` after netstack comes up (FIXED 2026-10-18, upstream-sync; was
   ~7% of i386 boots).** A kernel stack overflow, not the emulator: 1/20 on QEMU 11.0.50 and 2/20
   on 11.1.0 from the same media. netstack's `engine::worker` reserves a 7.3 KB frame (0x1c80) of
@@ -3818,8 +3831,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   them**, so `vibeos-cli check` covers them continuously and the staticlib never sees their
   symbols. Deliberately not invented inside the change repairing the incident.
 
-- **`vibeos-cli conformance` exits 0 on media that launched ZERO tests. UNOWNED**
-  (2026-09-19). Verified in an artifact: `launched: 0`, `sweep_rc: 1`, and every baseline row
+- **`vibeos-cli conformance` exits 0 on media that launched ZERO tests. FIXED 2026-11-21
+  (conformance lane):** a hand run now fails by default on any regression, bad launch or
+  kernel assertion, and a zero-launch sweep reports every row as "never launched", which is
+  a regression. `--report-only` restores exit 0 but records verdict WARN. Original report
+  (2026-09-19): Verified in an artifact: `launched: 0`, `sweep_rc: 1`, and every baseline row
   reported as the literal string **`in baseline (OK) but never launched`**. A test that never
   ran is scored **OK**, so zero launches means zero regressions means
   `ratchet holds: no regressions vs baseline`, exit 0. Two guards exist and neither covers

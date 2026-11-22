@@ -3721,6 +3721,13 @@ CONTROLS: list[Control] = [
 # Lints deliberately NOT fixture-driven, each with the reason. Anything absent
 # from both this set and CONTROLS fails test_every_lint_is_accounted_for.
 UNCOVERED: dict[str, str] = {
+    "scan_guard_drop_late": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/guard_drop_late.rs: rmap.rs's pool free and pagfault.rs's "
+        "rebalance wait after a [guard-drop] marker must be flagged; a drop(), a return/"
+        "continue, a macro statement, a tail expression and the block's end must not."
+    ),
     "scan_inf_unbuilt_dlls": (
         "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
         "and known-good fixtures are the unit tests in "

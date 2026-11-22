@@ -192,8 +192,7 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    images as `IMAGE_NT_HEADERS32`: `SizeOfImage` happens to share the offset, but the load-config
    read is wrong, so x64 images never get volatile metadata (harmless with TSO off).
 
-   **State at the 2026-11-08 park (code on branch `wow64-amd64`, not landed; RESUME HERE in
-   `active-lanes/wow64-plan.md`).** Built and working:
+   **State (2026-11-21).** Built and working:
    - `ImageTracker` reads the load config by the image's own width.
    - `fexcachegen64.exe` is FEXOfflineCompiler built for the x64 guest
      (`tools/fex/wowx64fex/CMakeLists.txt`), staged to `<SystemRoot>\fex-emu\`.
@@ -205,8 +204,8 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
      runs the sweep twice and the generator in between.
 
    Measured on the full sweep (`20261108-112830-8O8BVF`): pass 1 passed 51/51 with 297 s of
-   compile; the generator then wrote 136 caches in 124 s. Pass 2 is red: every cached process
-   dies early. Bugs found and fixed on the way:
+   compile; the generator then wrote 136 caches in 124 s. Pass 2 was red then: every cached
+   process died early. Bugs found and fixed:
    - The generator compiled under FEX's Linux syscall ABI, which stores the handler's return
      into RAX. The Windows layers return 0, so every cached syscall "succeeded" and an
      `NtQueryDirectoryFile` loop never ended. It now uses `OS_GENERIC`, as every Windows layer
@@ -220,18 +219,30 @@ media (and `--arch amd64 --ladder` for wow64.dll). Owed, most valuable first:
    - `thread_local` in libwowx64fex.dll faults: implicit TLS is not set up for a DLL loaded at
      run time, and inside the fault handler it recursed to a stack overflow.
 
-   Where it stops (`20261108-153307-QGgJ8f`): with notepad/calc/winmine caches loaded
-   (exe, ntdll, kernel32, ntdll_vista), each thread dies on a fault whose whole user context
-   is zero (SP, PC, LR, FP and address all 0; the kernel's `[UEXC-STKBAD]` now prints them).
-   That is a thread resumed from a zero-filled CONTEXT, not a bad instruction. Suspects: a
-   path that restores `TD->EntryContext` or calls `NtContinue` before one was captured, or
-   something cached code exits through differently from JIT code (callbacks, `Simulate`
-   re-entry). Then:
-   - the vendor-patches rows ("lazy code cache on Windows", "machine-wide code cache",
-     "guest-width images", "cache generator", "cache config");
-   - remove the `VIBEOS DIAG` prints;
-   - the FEX ladder on plain media;
-   - then libwow64fex.
+   - **The zero context (`20261108-153307-QGgJ8f`, fixed 2026-11-21).** Every cached process
+     died on a fault whose whole user context was zero: SP, PC, LR, FP, all 0. The kernel
+     showed the context was installed by the CPU layer's own `NtContinue`, in
+     `BTCpu64ResetToConsistentState`, after a handler had claimed the fault. The claimer was
+     the JIT guard-page check. `Thread->JITGuardPage` is 0 until the thread's first compile,
+     which makes the null page "the guard page". So a null dereference was taken for a JIT
+     buffer overflow, and FEX "restarted the compile" by loading `RestartJump` (never set, all
+     zero) into the context. A thread on the JIT always compiles before it runs, but one on
+     cached blocks may never compile. wowx64fex now consults the guard page only once one
+     exists. Upstream's `WOW64/Module.cpp` makes the same unguarded call, and so needs the
+     same guard (as a vendor patch) once libwow64fex loads caches.
+
+   With that fix the 3-app subset passes on cached code (`20261121-205221-RTnSLM`):
+
+   | app | JIT pass | cached pass |
+   |---|---|---|
+   | notepad | 12.2 s | 8.5 s (23 images, 483 pages run) |
+   | calc | 20.3 s | 10.7 s |
+   | winmine | 10.0 s | 9.2 s |
+
+   The cache stays off unless the tripwire sets `FEX_ENABLECODECACHINGWIP=1`. Still owed:
+   - the full 51-app sweep with the cache, against the 297 s of compile;
+   - making the cache the default;
+   - libwow64fex, the x86 guest's CPU layer.
 
 They are graded where the media carries them (`tests/qemu/cli/ladder.py` `STAGED_LADDER`): they
 need build-amd64 to exist at all, so an arm64-only tree does not owe them. `hello64` (no

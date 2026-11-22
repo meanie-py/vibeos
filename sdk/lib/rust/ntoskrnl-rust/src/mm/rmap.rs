@@ -708,7 +708,12 @@ pub unsafe extern "system" fn MmDeleteSectionAssociation(Page: PFN_NUMBER) {
             } else {
                 (*previous_entry).Next = (*current_entry).Next;
             }
-            // [guard-drop] MiReleasePfnLock(OldIrql);
+            // MiReleasePfnLock(OldIrql) comes BEFORE the free, as in the C. The guard
+            // conversion left it to the guard's scope end, so the entry was freed under the
+            // PFN lock. A lookaside spill goes to ExFreePool, and under SPECIALPOOL=* that is
+            // MmFreeSpecialPool, which takes the PFN lock itself: i386 bugchecked 0x0F
+            // SPIN_LOCK_ALREADY_OWNED on MmPfnLock from CcPurgeCacheSection.
+            drop(pfn_guard);
             ExFreeToNPagedLookasideList(core::ptr::addr_of_mut!(RmapLookasideList), current_entry as PVOID);
             return;
         }

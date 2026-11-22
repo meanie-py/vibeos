@@ -154,7 +154,9 @@ p.wait()
             while time.monotonic() < limit:
                 try:
                     state = Path(f"/proc/{child_pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
-                except FileNotFoundError:
+                # A child reaped between open() and read() fails the read with ESRCH
+                # (ProcessLookupError), not ENOENT. Either way it is gone.
+                except (FileNotFoundError, ProcessLookupError):
                     break
                 if state == "Z":
                     break

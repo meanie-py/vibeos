@@ -335,6 +335,13 @@ unsafe fn KiSvcDispatch(TrapFrame: PKTRAP_FRAME) {
         Args[8], Args[9], Args[10], Args[11],
         Args[12], Args[13], Args[14]
     );
+    if crate::tripwire::VibeSvcTraceArmed != 0 && (SvcResult as u32) >= 0xC000_0000 {
+        crate::tripwire::svcfail_log(
+            SvcResult as u32,
+            ServiceNumber,
+            [Args[0] as usize, Args[1] as usize, Args[2] as usize, Args[3] as usize, Args[4] as usize, Args[5] as usize],
+        );
+    }
 
     (*Thread).TrapFrame = OldTrapFrame;
     (*Thread).__bindgen_anon_5.__bindgen_anon_2.PreviousMode = OldMode;
