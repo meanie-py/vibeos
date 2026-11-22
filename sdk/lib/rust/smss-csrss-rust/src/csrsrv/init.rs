@@ -1012,7 +1012,7 @@ pub unsafe extern "system" fn CsrSbApiPortInitialize() -> NTSTATUS {
             0,
             0,
             0,
-            core::mem::transmute(CsrSbApiRequestThread as usize),
+            Some(CsrSbApiRequestThread),
             core::ptr::null_mut(),
             &mut hRequestThread,
             &mut ClientId,

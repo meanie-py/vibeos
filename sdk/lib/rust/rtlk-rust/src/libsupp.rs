@@ -677,7 +677,7 @@ pub unsafe extern "C" fn RtlpDestroyAtomHandleTable(AtomTable: PRTL_ATOM_TABLE) 
     if !(*AtomTable).__bindgen_anon_2.ExHandleTable.is_null() {
         ExSweepHandleTable(
             (*AtomTable).__bindgen_anon_2.ExHandleTable,
-            core::mem::transmute(RtlpCloseHandleCallback as usize),
+            Some(RtlpCloseHandleCallback),
             (*AtomTable).__bindgen_anon_2.ExHandleTable as PVOID,
         );
         ExDestroyHandleTable((*AtomTable).__bindgen_anon_2.ExHandleTable, core::ptr::null_mut());

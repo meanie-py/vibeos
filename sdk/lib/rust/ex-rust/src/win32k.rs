@@ -289,8 +289,11 @@ pub unsafe extern "system" fn ExpDesktopClose(
     Process: PEPROCESS,
     Object: PVOID,
     GrantedAccess: ACCESS_MASK,
-    ProcessHandleCount: ULONG,
-    SystemHandleCount: ULONG,
+    // OB_CLOSE_METHOD (ndk/obtypes.h:194) passes both counts as ULONG_PTR (bindgen's, which is
+    // u64 on 64-bit; the crate-local ULONG_PTR is usize, a different type), as does the C
+    // definition; this was ULONG, hidden behind a `transmute(f as usize)` into the slot.
+    ProcessHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
+    SystemHandleCount: ntkrnl_sys::ddk::ULONG_PTR,
 ) {
     let Process = opaque_ptr(Process);
     let Object = opaque_ptr(Object);
@@ -299,8 +302,9 @@ pub unsafe extern "system" fn ExpDesktopClose(
     Parameters.Process = Process;
     Parameters.Object = Object;
     Parameters.AccessMask = GrantedAccess;
-    Parameters.ProcessHandleCount = ProcessHandleCount;
-    Parameters.SystemHandleCount = SystemHandleCount;
+    // The parameter block's fields are ULONG (pstypes.h:1865): C truncates here too.
+    Parameters.ProcessHandleCount = ProcessHandleCount as ULONG;
+    Parameters.SystemHandleCount = SystemHandleCount as ULONG;
 
     ExpWin32SessionCallout(
         Object,
@@ -323,9 +327,9 @@ pub unsafe extern "system" fn ExpWin32kInit() -> BOOLEAN {
     ObjectTypeInitializer.Length = core::mem::size_of::<OBJECT_TYPE_INITIALIZER>() as u16;
     ObjectTypeInitializer.GenericMapping = ExpWindowStationMapping;
     ObjectTypeInitializer.PoolType = NonPagedPool as u32;
-    ObjectTypeInitializer.DeleteProcedure = core::mem::transmute(ExpWinStaObjectDelete as usize);
-    ObjectTypeInitializer.ParseProcedure = core::mem::transmute(ExpWinStaObjectParse as usize);
-    ObjectTypeInitializer.OkayToCloseProcedure = core::mem::transmute(ExpWindowStationOkToClose as usize);
+    ObjectTypeInitializer.DeleteProcedure = Some(ExpWinStaObjectDelete);
+    ObjectTypeInitializer.ParseProcedure = Some(ExpWinStaObjectParse);
+    ObjectTypeInitializer.OkayToCloseProcedure = Some(ExpWindowStationOkToClose);
     ObjectTypeInitializer.SecurityRequired = 1u8;
     ObjectTypeInitializer.InvalidAttributes = OBJ_OPENLINK | OBJ_PERMANENT | OBJ_EXCLUSIVE;
     ObjectTypeInitializer.ValidAccessMask = STANDARD_RIGHTS_REQUIRED;
@@ -341,11 +345,11 @@ pub unsafe extern "system" fn ExpWin32kInit() -> BOOLEAN {
 
     RtlInitUnicodeString(&mut Name as *mut _UNICODE_STRING, w!("Desktop").as_ptr() as *const u16);
     ObjectTypeInitializer.GenericMapping = ExpDesktopMapping;
-    ObjectTypeInitializer.DeleteProcedure = core::mem::transmute(ExpDesktopDelete as usize);
+    ObjectTypeInitializer.DeleteProcedure = Some(ExpDesktopDelete);
     ObjectTypeInitializer.ParseProcedure = None;
-    ObjectTypeInitializer.OkayToCloseProcedure = core::mem::transmute(ExpDesktopOkToClose as usize);
-    ObjectTypeInitializer.OpenProcedure = core::mem::transmute(ExpDesktopOpen as usize);
-    ObjectTypeInitializer.CloseProcedure = core::mem::transmute(ExpDesktopClose as usize);
+    ObjectTypeInitializer.OkayToCloseProcedure = Some(ExpDesktopOkToClose);
+    ObjectTypeInitializer.OpenProcedure = Some(ExpDesktopOpen);
+    ObjectTypeInitializer.CloseProcedure = Some(ExpDesktopClose);
     // Windows keeps per-process handle counts for Desktop (ObTypes.cpp:281); the C left it
     // off. ObCreateObjectType refuses the flag on a type with neither an Open nor a Close
     // procedure, so WindowStation, which has neither here (on Windows win32k supplies

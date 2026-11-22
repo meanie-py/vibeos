@@ -200,7 +200,7 @@ pub unsafe extern "system" fn CsrLoadServerDll(
             &mut EntryPointString,
             b"CsrServerDllInitialization\0".as_ptr() as *mut i8,
         );
-        ServerDllInitProcedure = core::mem::transmute(CsrServerDllInitialization as usize);
+        ServerDllInitProcedure = Some(CsrServerDllInitialization);
         Status = STATUS_SUCCESS;
     }
 

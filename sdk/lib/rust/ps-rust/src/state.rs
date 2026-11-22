@@ -397,7 +397,7 @@ pub unsafe extern "system" fn NtQueueApcThreadEx(
         apc as PKAPC,
         core::ptr::addr_of_mut!((*thread).Tcb) as PKTHREAD,
         _KAPC_ENVIRONMENT_OriginalApcEnvironment,
-        core::mem::transmute(PspQueueApcSpecialApc as usize),
+        Some(PspQueueApcSpecialApc),
         None,
         apc_routine,
         UserMode,

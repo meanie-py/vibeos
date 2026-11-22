@@ -1375,7 +1375,7 @@ pub unsafe extern "system" fn NtSetSystemPowerState(
             if PsGetCurrentProcess() as PVOID != PsInitialSystemProcess as PVOID {
                 ExInitializeWorkItem_inline(
                     core::ptr::addr_of_mut!(PopShutdownWorkItem),
-                    core::mem::transmute(PopGracefulShutdown as usize),
+                    Some(PopGracefulShutdown),
                     core::ptr::null_mut(),
                 );
 

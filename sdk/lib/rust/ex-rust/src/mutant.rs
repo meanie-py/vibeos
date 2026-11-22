@@ -90,7 +90,7 @@ pub unsafe extern "system" fn ExpInitializeMutantImplementation() -> BOOLEAN {
     ObjectTypeInitializer.DefaultNonPagedPoolCharge = core::mem::size_of::<KMUTANT>() as ULONG;
     ObjectTypeInitializer.GenericMapping = ExpMutantMapping;
     ObjectTypeInitializer.PoolType = NonPagedPool as u32;
-    ObjectTypeInitializer.DeleteProcedure = core::mem::transmute(ExpDeleteMutant as usize);
+    ObjectTypeInitializer.DeleteProcedure = Some(ExpDeleteMutant);
     ObjectTypeInitializer.ValidAccessMask = MUTANT_ALL_ACCESS;
     ObjectTypeInitializer.InvalidAttributes = OBJ_OPENLINK;
     let Status = ObCreateObjectType(

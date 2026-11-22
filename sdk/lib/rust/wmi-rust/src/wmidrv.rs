@@ -378,7 +378,7 @@ pub unsafe extern "system" fn WmipReceiveNotifications(
     let IrpContext = (*Irp).Tail.Overlay.__bindgen_anon_1.__bindgen_anon_1.DriverContext[0] as *mut WMIP_IRP_CONTEXT;
     WmipInitializeIrpContext(IrpContext);
 
-    IoSetCancelRoutine(Irp, core::mem::transmute(WmipNotificationIrpCancel as usize));
+    IoSetCancelRoutine(Irp, Some(WmipNotificationIrpCancel));
 
     if (*Irp).Cancel != 0 && IoSetCancelRoutine(Irp, None).is_some() {
         STATUS_CANCELLED
@@ -672,16 +672,16 @@ pub unsafe extern "system" fn WmipDriverEntry(
     // SAFETY: extern "system" maps to the correct ABI per-platform (stdcall on i386, C on amd64/arm64).
     // Transmute is needed because Rust's type system treats extern "system" differently from
     // bindgen's extern "stdcall" (i386) / extern "C" (amd64) even though the ABI is identical.
-    (*DriverObject).MajorFunction[IRP_MJ_CREATE] = core::mem::transmute(WmipOpenCloseCleanup as usize);
-    (*DriverObject).MajorFunction[IRP_MJ_CLOSE] = core::mem::transmute(WmipOpenCloseCleanup as usize);
-    (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL] = core::mem::transmute(WmipIoControl as usize);
-    (*DriverObject).MajorFunction[IRP_MJ_CLEANUP] = core::mem::transmute(WmipOpenCloseCleanup as usize);
-    (*DriverObject).MajorFunction[IRP_MJ_SYSTEM_CONTROL] = core::mem::transmute(WmipSystemControl as usize);
-    (*DriverObject).MajorFunction[IRP_MJ_SHUTDOWN] = core::mem::transmute(WmipShutdown as usize);
+    (*DriverObject).MajorFunction[IRP_MJ_CREATE] = Some(WmipOpenCloseCleanup);
+    (*DriverObject).MajorFunction[IRP_MJ_CLOSE] = Some(WmipOpenCloseCleanup);
+    (*DriverObject).MajorFunction[IRP_MJ_DEVICE_CONTROL] = Some(WmipIoControl);
+    (*DriverObject).MajorFunction[IRP_MJ_CLEANUP] = Some(WmipOpenCloseCleanup);
+    (*DriverObject).MajorFunction[IRP_MJ_SYSTEM_CONTROL] = Some(WmipSystemControl);
+    (*DriverObject).MajorFunction[IRP_MJ_SHUTDOWN] = Some(WmipShutdown);
 
     core::ptr::write_bytes(&raw mut WmipFastIoDispatch as *mut FAST_IO_DISPATCH as *mut u8, 0, core::mem::size_of::<FAST_IO_DISPATCH>());
     WmipFastIoDispatch.SizeOfFastIoDispatch = core::mem::size_of::<FAST_IO_DISPATCH>() as ULONG;
-    WmipFastIoDispatch.FastIoDeviceControl = core::mem::transmute(WmipFastIoDeviceControl as usize);
+    WmipFastIoDispatch.FastIoDeviceControl = Some(WmipFastIoDeviceControl);
     (*DriverObject).FastIoDispatch = &raw mut WmipFastIoDispatch;
 
     IoWMIRegistrationControl(WmipServiceDeviceObject, WMIREG_ACTION_REGISTER);

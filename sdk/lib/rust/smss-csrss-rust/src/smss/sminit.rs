@@ -1810,7 +1810,7 @@ unsafe extern "system" fn SmpInitializeKnownDllsInternal(
 
             Status = LdrVerifyImageMatchesChecksum(
                 ((FileHandle as ULONG_PTR) | 1) as HANDLE,
-                core::mem::transmute(SmpProcessModuleImports as usize),
+                Some(SmpProcessModuleImports),
                 RegEntry as PVOID,
                 &mut ImageCharacteristics,
             );
