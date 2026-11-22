@@ -484,6 +484,101 @@ static int fmtmsg_check(void)
     return n1 && n2;
 }
 
+/* Whether this boot's tripwire config (HKLM\SYSTEM\CurrentControlSet\Control\VibeTripwire,
+ * tokens separated by space, semicolon or newline) holds `tok`. */
+static int tripwire_has(const char *tok)
+{
+    char buf[1024];
+    DWORD size = sizeof buf - 1, type;
+    HKEY hk;
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, "SYSTEM\\CurrentControlSet\\Control", 0, KEY_QUERY_VALUE, &hk))
+        return 0;
+    LONG r = RegQueryValueExA(hk, "VibeTripwire", NULL, &type, (BYTE *)buf, &size);
+    RegCloseKey(hk);
+    if (r || type != REG_SZ)
+        return 0;
+    buf[size] = 0;
+    for (char *t = strtok(buf, " ;\n"); t; t = strtok(NULL, " ;\n"))
+        if (!strcmp(t, tok))
+            return 1;
+    return 0;
+}
+
+/* FEX's code cache (docs/engineering/wow64-x64-guest-design.md, item 7): with the cache on,
+ * pass 1 of the sweep leaves the code maps, this turns them into caches, and pass 2 runs on
+ * them. The generator is native arm64 and lives next to the cache, outside system32, which an
+ * x86-64 guest sees redirected. Its output comes back on the serial log, so a failure in it
+ * is visible rather than a pass 2 that simply ran uncached. */
+static void run_cache_generator(const char *windir)
+{
+    char cmd[MAX_PATH + 64], line[512];
+    snprintf(cmd, sizeof cmd, "\"%s\\fex-emu\\fexcachegen64.exe\" process-all", windir);
+    SECURITY_ATTRIBUTES sa = { sizeof sa, NULL, TRUE };
+    HANDLE rd, wr;
+    if (!CreatePipe(&rd, &wr, &sa, 0)) {
+        SAY("code cache generator FAIL pipe gle=%lu\n", GetLastError());
+        return;
+    }
+    SetHandleInformation(rd, HANDLE_FLAG_INHERIT, 0);
+    STARTUPINFOA si = { sizeof si };
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdOutput = si.hStdError = wr;
+    PROCESS_INFORMATION pi;
+    DWORD t0 = GetTickCount(), rc = 0;
+    if (!CreateProcessA(NULL, cmd, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        SAY("code cache generator FAIL spawn %s gle=%lu\n", cmd, GetLastError());
+        CloseHandle(rd);
+        CloseHandle(wr);
+        return;
+    }
+    CloseHandle(wr);
+    size_t used = 0;
+    unsigned lines = 0;
+    DWORD got, avail;
+    char c;
+    /* Polled rather than a blocking read, so a generator that stops making progress is
+     * stopped and its threads shown, rather than eating the payload's whole drain budget. */
+    for (;;) {
+        if (PeekNamedPipe(rd, NULL, 0, NULL, &avail, NULL) && avail) {
+            if (!ReadFile(rd, &c, 1, &got, NULL) || !got)
+                break;
+            if (c == '\n' || used == sizeof line - 1) {
+                line[used] = 0;
+                /* FEX's [D] lines (one per SMC interval) are most of the output and say nothing
+                 * about the caches; everything else is a handful of lines per binary. */
+                lines++;
+                if (strncmp(line, "[D] ", 4) != 0)
+                    SAY("  gen: %s\n", line);
+                used = 0;
+            } else if (c != '\r')
+                line[used++] = c;
+            continue;
+        }
+        if (WaitForSingleObject(pi.hProcess, 0) == WAIT_OBJECT_0) {
+            if (!PeekNamedPipe(rd, NULL, 0, NULL, &avail, NULL) || !avail)
+                break;
+            continue;
+        }
+        if (GetTickCount() - t0 > 20 * 60 * 1000) {
+            SAY("code cache generator TIMEOUT after 20 min; its threads:\n");
+            dump_process(pi.dwProcessId);
+            TerminateProcess(pi.hProcess, 0xDEAD);
+            break;
+        }
+        Sleep(200);
+    }
+    if (used) {
+        line[used] = 0;
+        SAY("  gen: %s\n", line);
+    }
+    CloseHandle(rd);
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    GetExitCodeProcess(pi.hProcess, &rc);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    SAY("code cache generator exit=0x%lx ms=%lu lines=%u\n", rc, GetTickCount() - t0, lines);
+}
+
 /* APPSTORM_ONLY=a,b build.sh compiles in a subset of apps and scenarios, for iterating on one. */
 static int wanted(const char *name)
 {
@@ -807,7 +902,17 @@ int main(void)
 #ifndef APPSTORM_REPEAT
 #define APPSTORM_REPEAT 1
 #endif
-    for (unsigned rep = 0; rep < APPSTORM_REPEAT * (sizeof apps / sizeof apps[0]); rep++) {
+    const unsigned per_pass = APPSTORM_REPEAT * (sizeof apps / sizeof apps[0]);
+    const unsigned passes = tripwire_has("FEX_ENABLECODECACHINGWIP=1") ? 2 : 1;
+    if (passes > 1)
+        SAY("code cache pass 1\n");
+    for (unsigned rep = 0; rep < passes * per_pass; rep++) {
+        if (rep && rep % per_pass == 0) {
+            char windir_a[MAX_PATH];
+            GetWindowsDirectoryA(windir_a, MAX_PATH);
+            run_cache_generator(windir_a);
+            SAY("code cache pass %u\n", rep / per_pass + 1);
+        }
         const unsigned k = rep % (sizeof apps / sizeof apps[0]);
         const app_t *a = &apps[k];
         char path[MAX_PATH], cmd[1024], args[MAX_PATH];

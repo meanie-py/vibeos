@@ -50,6 +50,11 @@ MappedCodeCacheFile::~MappedCodeCacheFile() {
   if (!CodeBuffer.empty()) {
     FEXCore::Allocator::munmap(CodeBuffer.data(), CodeBuffer.size_bytes());
   }
+#else
+  // VIBEOS PATCH (lazy code cache on Windows): the reservation LoadCache made.
+  if (!CodeBuffer.empty()) {
+    ::VirtualFree(CodeBuffer.data(), 0, MEM_RELEASE);
+  }
 #endif
 }
 
@@ -601,8 +606,18 @@ CodeCache::LoadCache(std::span<std::byte> CacheFile, const ExecutableFileInfo& F
   }
   auto CodeBuffer = std::span {static_cast<std::byte*>(CodeBufferAllocation), header.CodeBufferSize};
 #else
-  // TODO: Implement lazy mapping on Windows
-  auto CodeBuffer = CodeDataInFile;
+  // VIBEOS PATCH (lazy code cache on Windows): as above, the post-relocation code lives apart
+  // from the file and starts inaccessible (reserved, not committed). FinalizeCodePages commits
+  // and fills it, all at once below or a page range at a time from the frontend's
+  // access-violation handler. Relocating the file view in place instead (upstream's TODO)
+  // writes every page, since every block refers to the per-process dispatcher, so each
+  // process would hold a private copy of the whole cache rather than of the code it runs.
+  auto* CodeBufferAllocation = static_cast<std::byte*>(Allocator::VirtualAlloc(header.CodeBufferSize, true, false));
+  if (!CodeBufferAllocation) {
+    LogMan::Msg::EFmt("Failed to reserve target memory for code cache");
+    return nullptr;
+  }
+  auto CodeBuffer = std::span {CodeBufferAllocation, header.CodeBufferSize};
 #endif
 
   // Group relocations by page
@@ -719,12 +734,7 @@ bool CodeCache::EnableLoadedSection(Core::InternalThreadState* Thread, MappedCod
     }
   }
 
-#ifndef _WIN32
-  if (!EnableLazyCodeCaching || EnableCodeCacheValidation) {
-#else
-  // TODO: Implement lazy mapping on Windows
-  if (true) {
-#endif
+  if (!EnableLazyCodeCaching || EnableCodeCacheValidation) { // VIBEOS PATCH (lazy code cache on Windows)
     auto Range = SelectCodeRangeToFinalize(Code, 0, Code.CodeBuffer.size_bytes() / Utils::FEX_PAGE_SIZE);
     FinalizeCodePages(Code, Range);
   }
@@ -869,11 +879,28 @@ void CodeCache::FinalizeCodePages(MappedCodeCacheFile& Code, std::span<std::byte
   // Release resident file pages that will no longer be needed. The VA range is left allocated to allow cleanup with a single VirtualFree.
   Allocator::VirtualDontNeed(Code.CodeBufferInFile.data() + StartOffset, Size);
 #else
-  // TODO: Implement lazy mapping on Windows
+  // VIBEOS PATCH (lazy code cache on Windows): Windows has no mremap to swap a finished page in
+  // atomically, so the protection change is the atomic step. The range is committed read-write
+  // but not executable while it is filled and relocated: a thread that jumps into it meanwhile
+  // takes an access violation and waits on the frontend's lock, then finds it loaded. It is
+  // published read-write-execute, as FEX's own code buffers are, because block linking patches
+  // branches in place.
+  if (!::VirtualAlloc(CodeRange.data(), Size, MEM_COMMIT, PAGE_READWRITE)) {
+    ERROR_AND_DIE_FMT("Failed to commit {} bytes of code-cache memory", Size);
+  }
+  memcpy(CodeRange.data(), Code.CodeBufferInFile.data() + StartOffset, Size);
   for (size_t i = StartPage; i < EndPage; ++i) {
     auto PageRelocations = SpanPageRelocations(Code, i);
-    (void)ApplyCodeRelocations(Code.GuestBase, Code.CodeBuffer, PageRelocations, 0, false);
+    (void)ApplyCodeRelocations(Code.GuestBase, CodeRange, PageRelocations, static_cast<uint32_t>(StartOffset), false);
     Code.LoadedPages[i] = true;
+  }
+  ARMEmitter::Emitter::ClearICache(CodeRange.data(), Size);
+  // Not Allocator::VirtualProtect: it passes a null old-protection pointer, which
+  // NtProtectVirtualMemory refuses, and ignores the failure. The range then stayed
+  // non-executable and its first execution faulted again, forever.
+  DWORD OldProtection;
+  if (!::VirtualProtect(CodeRange.data(), Size, PAGE_EXECUTE_READWRITE, &OldProtection)) {
+    ERROR_AND_DIE_FMT("Failed to make {} bytes of code-cache memory executable", Size);
   }
 #endif
 
