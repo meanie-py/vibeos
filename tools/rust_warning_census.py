@@ -625,17 +625,25 @@ def parse_check_output(stdout: str, wanted: set[str]) -> tuple[dict[str, list[Si
     return found, compiled
 
 
+UNIT_DIRS_JSON = Path(__file__).resolve().parent / "vibeos-lint/src/binary/cargo_unit_dirs.json"
+
+
 def cell_target_dirs(repo: Path, arch: str) -> list[Path]:
-    """This worktree's per-arch cargo target dirs outside build-<arch>."""
-    target = repo / "sdk" / "lib" / "rust" / "target"
-    if not target.is_dir():
-        return []
-    return [
-        d
-        for pat in (f"body-storage-v1-{arch}-*", f"cell-link-v1-{arch}-*")
-        for d in target.glob(pat)
-        if d.is_dir()
-    ]
+    """This worktree's per-arch cargo target dirs outside build-<arch>: the SAME list
+    vibeos-lint's rust_ub_deny reads (`unit_dirs`), from one shared JSON, so the census
+    and the deny gate cannot disagree about which units exist."""
+    spec = json.loads(UNIT_DIRS_JSON.read_text())
+    dirs = []
+    for pattern in spec["patterns"]:
+        pattern = pattern.replace("{arch}", arch)
+        if not pattern.endswith("*"):
+            raise ValueError(f"{UNIT_DIRS_JSON.name}: {pattern!r} must end in '*'")
+        full = repo / pattern[:-1]
+        if full.parent.is_dir():
+            dirs += [
+                d for d in full.parent.iterdir() if d.name.startswith(full.name) and d.is_dir()
+            ]
+    return sorted(dirs)
 
 
 def arch_of_build_dir(d: Path) -> str:

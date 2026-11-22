@@ -353,3 +353,20 @@ def test_check_output_counts_a_crate_only_when_cargo_compiled_it():
     found, compiled = c.parse_check_output(out, {"acpi-rust", "ntkrnl-sys", "other-rust"})
     assert compiled == {"acpi-rust", "ntkrnl-sys"}  # a build script is not the crate
     assert [(s.path, s.lint) for s in found["acpi-rust"]] == [("acpi-rust/src/osl.rs", "dead_code")]
+
+
+def test_cell_target_dirs_follow_the_list_the_deny_gate_reads(tmp_path):
+    target = tmp_path / "sdk" / "lib" / "rust" / "target"
+    for d in (
+        "body-storage-v1-amd64-64ad-0-rustlib",
+        "body-storage-v1-arm64-04a7-3-rustlib",
+        "cell-link-v1-amd64-14",
+        "cell-link-v1-amd64x-1",
+        "release",
+    ):
+        (target / d).mkdir(parents=True)
+    assert [d.name for d in c.cell_target_dirs(tmp_path, "amd64")] == [
+        "body-storage-v1-amd64-64ad-0-rustlib",
+        "cell-link-v1-amd64-14",
+    ]
+    assert c.cell_target_dirs(tmp_path / "empty", "amd64") == []

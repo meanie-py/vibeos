@@ -1,0 +1,7 @@
+{
+  "_comment": "Cargo target dirs, beyond build-<arch>, whose .fingerprint units a warnings reader must read for <arch>. Paths are relative to the worktree root; each pattern ends in '-*' and matches by prefix. Read by vibeos-lint's rust_ub_deny (include_str!) and tools/rust_warning_census.py (json.load), so the gate and the census cannot see different trees. Bodies a cell builds privately compile in body-storage; cell links in cell-link.",
+  "patterns": [
+    "sdk/lib/rust/target/body-storage-v1-{arch}-*",
+    "sdk/lib/rust/target/cell-link-v1-{arch}-*"
+  ]
+}
