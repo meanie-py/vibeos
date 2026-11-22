@@ -56,12 +56,19 @@ payload: `VIBEOS_PAYLOAD=k32winetest ./vibeos-cli build --arch i386 --winetests 
 **Owed, next step first.**
 - kernel32:locale **97** (2026-11-22, `/tmp/vibeos-cli/20261122-120532-ngDttQ-smoke-i386`):
   every small cluster is done; what is left is two projects, largest first:
-  1. **Sort keys, 90 + 1**: the 145 at locale.c:3892 were LCMAP_SORTKEY only (the
-     CompareString half of the same pairs already passed via ntsort.rs), so the fix was
-     sort keys from ntsort's weights, not a new table: **145 -> 90 DONE 2026-11-22**
-     (`ntsort::nt_sort_key`), with the short-buffer fill (2790-2801) and 3913. The 90 left
-     at 3892 and the key length at 2469 are what ntsort itself does not model yet; triage
-     them by entry before assuming a Windows-10 table is needed.
+  1. **Sort keys, 90 + 1**: locale.c:3892 checks LCMAP_SORTKEY only. (CORRECTION: the
+     CompareString half of test_unicode_sorting is compiled only at DLL_EXPORT_VERSION >=
+     0x600, so it never runs in this 0x502 build; 612ed202d2d's message and an earlier
+     line here said it passed, which nobody measured.) Sort keys from ntsort's XP-era
+     weights took **145 -> 90 (2026-11-22, `ntsort::nt_sort_key`)**, with the short-buffer
+     fill (2790-2801) and 3913. The 90 left are Windows-10 weights XP's sortkey.nls does
+     not have, triaged from `/tmp/vibeos-cli/20261122-120532-ngDttQ-smoke-i386`: CJK
+     ideograph order (~25, tests 35-40, 203-225, 241-243), kana/halfwidth (~20,
+     122-159), scripts and symbols newer than the table (Tai Tham, N'Ko 07f4/07f5,
+     Ethiopic, Yi a0xx, dingbats 27xx), and Windows 10's handling of combining marks
+     (26/27, 72/74, 230-239, 253-255). That is the Windows-10-era table plus Wine's newer
+     compare; design first. Building the CompareString half at 0x600 would show how many
+     of the same pairs ntsort's compare gets right.
   2. **Unicode normalization, ~4**: no NFC/NFKC data in the tree and no Rust
      RtlNormalizeString (stub). Blocks IdnToNameprepUnicode item 8 (5767: NFKC + B.2 case
      fold), IdnToUnicode's unassigned check (5864/5869: RFC 3454 A.1) and
