@@ -3566,6 +3566,44 @@ def _named_channel_debug(state: dict) -> int:
     return n
 
 
+_C_DEBUG_CALL = re.compile(r"\b(TRACE|WARN|FIXME|ERR|DPRINT1|DPRINT)\s*\(\s*(" + _STR_LIT + ")")
+_RUST_DPRINT1 = re.compile(r"\bDPRINT1!\((\s*)(" + _STR_LIT + ")")
+
+
+def _dprint1_as_c_macro(state: dict) -> int:
+    """`DPRINT1!("..")` where the module's C says TRACE/WARN/FIXME/ERR with that format.
+
+    The model reaches for ReactOS's DPRINT1, which always prints, for Wine's TRACE, which a
+    default channel keeps silent: crypt32's CertOpenStore traced every call (12 sites) and
+    shlwapi's PathIsDirectoryW every desktop path (5). The format string is the key: it is
+    rewritten only when the C has that format under exactly one Wine macro and never under
+    DPRINT1 itself.
+    """
+    c_macros: dict[str, set[str]] = {}
+    for tu in state.get("tus", []):
+        c_file = REPO / tu
+        if not c_file.is_file():
+            continue
+        for m in _C_DEBUG_CALL.finditer(c_file.read_text(errors="replace")):
+            c_macros.setdefault(m.group(2), set()).add(m.group(1))
+    n = 0
+    for path in _stem_sources(state):
+        text = path.read_text()
+
+        def swap(m: re.Match) -> str:
+            nonlocal n
+            macros = c_macros.get(m.group(2), set())
+            if len(macros) != 1 or macros & {"DPRINT1", "DPRINT"}:
+                return m.group(0)
+            n += 1
+            return f"{next(iter(macros))}!({m.group(1)}{m.group(2)}"
+
+        new = _RUST_DPRINT1.sub(swap, text)
+        if new != text:
+            path.write_text(new)
+    return n
+
+
 _C_OR_CASE = re.compile(r"\bcase\s*\(\s*([A-Za-z_]\w*(?:\s*\|\s*[A-Za-z_]\w*)+)\s*\)\s*:")
 
 
@@ -5879,6 +5917,10 @@ def stage_integrate(stem: str) -> None:
         print(
             f"integrate: {named} named-channel debug call(s) as WINE_<CLS>_!(__wine_dbch_<ch>, ..)"
         )
+    dprint1 = _dprint1_as_c_macro(state)
+    changed += dprint1
+    if dprint1:
+        print(f"integrate: {dprint1} DPRINT1!(..) back to the C's own TRACE/WARN/FIXME/ERR")
     or_cases = _or_case_values(state)
     changed += or_cases
     if or_cases:

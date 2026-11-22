@@ -1472,7 +1472,7 @@ pub unsafe extern "system" fn CertOpenStore(
     let mut hcs: *mut WINECRYPT_CERTSTORE = core::ptr::null_mut();
     let mut openFunc: StoreOpenFunc = None;
 
-    DPRINT1!(
+    TRACE!(
         "(%s, %08lx, %08Ix, %08lx, %p)\n",
         debugstr_a(lpszStoreProvider as *const core::ffi::c_char),
         dwMsgAndCertEncodingType,
@@ -1625,7 +1625,7 @@ pub unsafe extern "system" fn CertOpenStore(
             }
             _ => {
                 if (lpszStoreProvider as DWORD_PTR & 0xffff as DWORD_PTR) as WORD != 0 {
-                    DPRINT1!(
+                    FIXME!(
                         "unimplemented type %d\n",
                         (lpszStoreProvider as DWORD_PTR & 0xffff as DWORD_PTR) as WORD as i32
                     );
@@ -1724,7 +1724,7 @@ pub unsafe extern "system" fn CertOpenStore(
                 ) -> *mut WINECRYPT_CERTSTORE,
         ) as StoreOpenFunc;
     } else {
-        DPRINT1!(
+        FIXME!(
             "unimplemented type %s\n",
             lpszStoreProvider
         );
@@ -2426,10 +2426,10 @@ pub unsafe extern "system" fn CertRegisterSystemStore(
 pub unsafe extern "system" fn CertUnregisterSystemStore(pvSystemStore: *const core::ffi::c_void, dwFlags: DWORD) -> BOOL {
     let mut hstore: HCERTSTORE = core::ptr::null_mut::<core::ffi::c_void>();
     if (dwFlags & (CERT_SYSTEM_STORE_RELOCATE_FLAG as DWORD)) != 0 {
-        DPRINT1!("(%p, %08lx): flag not supported\n", pvSystemStore, dwFlags);
+        FIXME!("(%p, %08lx): flag not supported\n", pvSystemStore, dwFlags);
         return (FALSE) as BOOL;
     }
-    DPRINT1!("(%s, %08lx)\n", debugstr_w(pvSystemStore as *const WCHAR), dwFlags);
+    TRACE!("(%s, %08lx)\n", debugstr_w(pvSystemStore as *const WCHAR), dwFlags);
     hstore = CertOpenStore(
         CERT_STORE_PROV_SYSTEM_REGISTRY_W as LPCSTR,
         0 as DWORD,

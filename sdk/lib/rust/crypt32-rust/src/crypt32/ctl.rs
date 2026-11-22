@@ -193,7 +193,7 @@ pub unsafe extern "system" fn CertAddCTLContextToStore(
                 .addContext
                 .unwrap_unchecked()(
                 store as *mut WINE_CRYPTCERTSTORE,
-                context_from_ptr(context_from_ptr((toAdd).cast()) as *const core::ffi::c_void),
+                context_from_ptr(toAdd as *const core::ffi::c_void),
                 if !existing.is_null() {
                     context_from_ptr(existing as *const core::ffi::c_void)
                 } else {
