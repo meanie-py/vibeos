@@ -1,30 +1,33 @@
 # shell32 COM/ATL C++ → Rust (lane: `shell32-com`)
 
-## RESUME HERE (2026-11-21): i386 DirectX on a real GL, both fixes landed
+## RESUME HERE (2026-11-22, fleet parked until next weekend)
 
-wined3d (d3dwine.dll) has been all Rust since master d5078535e54 ($6.42 of a $15 Haiku budget,
-every module hand-banked so a `$0` replay reproduces it). On 2026-11-21 the i386 GL cases
-came up:
-- **0607914401c, landed as 6f395eed157:** the user-mode heap (`rtl-heap` `RtlpDeCommitFreeBlock`,
-  inherited C bug) left freed blocks' decommitted ranges a page too small to reuse. Every
-  Mesa softpipe context therefore reserved a fresh doubling segment, and a second wined3d
-  init in one i386 process ran out of address space. Roadmap Known bugs entry: FIXED.
-- **d90bbcff656, landed as a3d73c0af8b:** c2rust's amd64 `offsetof` folds in wined3d's light walks (232,
-  where i386 needs 228), in ddraw's `DDSURFACEDESC2` compare table and in a depth-stencil
-  compare. `scan_magic_offsets` now flags both shapes.
-- **Grades:** i386 modrun (mesa, d3d8, d3d9, ddraw) passes 9/9, so every d3d case is
-  byte-identical to the C on all three arches. The exceptions are the C oracle's own XFAIL
-  (`d3d8.device-invalid`) and one declared divergence.
-- **Next:** the owed item below.
-- **Owed:** when every attribs request fails, wined3d silently keeps a compatibility-profile
-  bootstrap context and then faults in Mesa's legacy path. It should fail the adapter init
-  loudly (roadmap, under the FIXED heap entry).
-- **Recipe:** `VIBEOS_PAYLOAD=modrun MODRUN_SUITES="mesa,d3d8,d3d9,ddraw" ./vibeos-cli build
-  --arch <a>`, then `smoke --arch <a> --payload modrun`. Then re-grade with the same
-  `MODRUN_SUITES` set: `python3 tools/payloads/modrun/modrun.py grade <serial> --arch <a>`.
-  The smoke's own grade counts suites that are not on the media. The probe arg `trace` gives
-  wined3d's `+d3d` trace plus the `dx_vm` address-space and heap-segment report; `shader`
-  gives only the generated GLSL.
+Everything from 2026-11-21/22 has landed. On 2026-11-21: the heap fix 6f395eed157 and
+wined3d/ddraw offset fix a3d73c0af8b (i386 DirectX matches the C on all three arches). On
+2026-11-22: roadmap triage, the sysfbprobe checks (09657ac1b49) and the KS narrowing
+(d6de9cac1d2). Known-bugs status from this lane:
+- **Closed, verified on a boot:** `SetPixel` writes black (fixed by ccacb417164).
+  `SetupDiGetClassDevs(DIGCF_ALLCLASSES)` error 31 was the startup ordering. The 512M Mesa-load
+  0x1E no longer bugchecks; what is left is an OOM stall, filed under MM commit accounting.
+- **Open, mine, in progress: "A KS pin create that the miniport refuses never returns".** The
+  refused create comes back out of ks `KspCreate` with `c000000d`, so the hang is (A) in
+  iomgr `IopParseDevice`'s failed-create cleanup, or (B) in the probe's next create, which
+  never reaches portcls. The roadmap entry has the details and the artifact.
+  - **Next:** re-apply the stash "shell32-com: KSDBG temp prints … 2026-11-22" (find it by
+    message, `git stash list --format='%H %gs'`, then `git stash apply <sha>`, never pop). It
+    holds the portcls/ks prints and a local `dsound.yaml` `ks` case (amd64, 90 s). Add prints
+    at `IopParseDevice`'s return and at ks `KspCreate` entry, or add a `printf` + `fflush`
+    before each create in `ks_direct`. Run `VIBEOS_PAYLOAD=modrun MODRUN_SUITES=dsound
+    ./vibeos-cli build --arch amd64`, then `smoke --arch amd64 --payload modrun`. Never
+    commit the `ks` case: modrun cannot reap a process stuck in the kernel, so later cases
+    go unrun.
+- **Owed (not started):** wined3d silently keeps a legacy GL context when every attribs
+  request fails. That looks deliberate upstream (old drivers), so leave it unless a real
+  failure shows up.
+- **Recipes:** modrun grading `VIBEOS_PAYLOAD=modrun MODRUN_SUITES="mesa,d3d8,d3d9,ddraw"`
+  build, then smoke, then re-grade with the same `MODRUN_SUITES` set via `modrun.py grade`
+  (the smoke's own grade counts suites not on the media). Probe args: `trace` (`+d3d` and the
+  `dx_vm` heap-segment report) and `shader` (GLSL only).
 
 **Status:** COMPLETE (opened 2026-07-14, closed 2026-07-18). All 33 activatable
 `shell32` object-map entries are Rust-owned. Worktree `vibeos-shell32-com`, branch
