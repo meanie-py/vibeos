@@ -184,19 +184,19 @@ unsafe fn handle_create(irp: PIRP, stack: PIO_STACK_LOCATION) -> NTSTATUS {
         let (kindtag, _) = match kind {
             TdiFileKind::Address => {
                 // The TransportAddress EA value is a TRANSPORT_ADDRESS / TA_IP_ADDRESS
-                // giving the local bind. Extract the port for the UDP datagram path
-                // (0 = ephemeral, chosen by the worker on first use).
-                let port = {
+                // giving the local bind: IP (0.0.0.0 = any) and port (0 = ephemeral,
+                // chosen by the worker when it creates the address object).
+                let (ip, port) = {
                     let name_len = (*ea).EaNameLength as usize;
                     let val_len = (*ea).EaValueLength as usize;
                     if val_len >= core::mem::size_of::<i32>() {
                         let val = (*ea).EaName.as_ptr().add(name_len + 1) as *const u8;
-                        tdi::parse_ta(val).map(|(_, p)| p).unwrap_or(0)
+                        tdi::parse_ta(val).unwrap_or(([0; 4], 0))
                     } else {
-                        0
+                        ([0; 4], 0)
                     }
                 };
-                tditrans::post(tditrans::Cmd::CreateAddr { id, port });
+                tditrans::post(tditrans::Cmd::CreateAddr { id, ip, port });
                 (KIND_ADDR, ())
             }
             TdiFileKind::Connection => {

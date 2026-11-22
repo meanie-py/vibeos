@@ -13,22 +13,23 @@ from live in the docs below; this file holds only the lane's state.
 
 ## RESUME HERE (2026-11-21, fleet resumed)
 
-**Done this session:** RESUME items 1 and 2.
+**Done this session:** RESUME items 1-3.
 - The CD alignment query's err=87 came from scsiport (UniATA's port), not cdrom or CDFS: its
   LUN PDO answered unknown properties with STATUS_INVALID_PARAMETER_1. It now answers
   STATUS_INVALID_DEVICE_REQUEST, which gives Win32 1 like Windows 11 (`e701132fc12`, integrator
   batch 177).
 - cdfs refuses `FILE_OPEN_REQUIRING_OPLOCK`, as measured on Windows 11 (fsquery's new
   `oplockopen` line), and fastfat's `FatCommonCreateCallout` has its try/except.
+- gpg-agent starts and hostapps is 34/34 green. The cause was not CreateProcess's
+  `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` (still unapplied, but harmless here): netstack left a
+  port-0 bind at port 0, so getsockname gave libassuan port 0. The `w32sock` probe grades it.
 
 **Next, in order:**
-1. gpg-agent cannot start because of CreateProcess's `PROC_THREAD_ATTRIBUTE_HANDLE_LIST`. It
-   is the one red line in hostapps.
-2. SVCFAIL tripwire on i386 and arm64 (amd64 only today).
-3. Soak candidate, never run: the amd64 `STATUS_NONEXISTENT_SECTOR` in-page 0x1E. It was seen
+1. SVCFAIL tripwire on i386 and arm64 (amd64 only today).
+2. Soak candidate, never run: the amd64 `STATUS_NONEXISTENT_SECTOR` in-page 0x1E. It was seen
    once (hostapps `20261101-123017-7ue7skcb`) and has been clean since; see the roadmap
    registry. Run `./vibeos-cli farm --arches amd64 --minutes 480`, then `farm-report`.
-4. Registry open questions: the i386 `SPECIALPOOL=*` 0x0F (deterministic, so debug it rather
+3. Registry open questions: the i386 `SPECIALPOOL=*` 0x0F (deterministic, so debug it rather
    than soak it), and arm64 ZwAllocateVirtualMemory's thread order (benign).
 
 **Scratch worktree:** `../vibeos-spbase` (detached, holds nothing unique). Leave it for
