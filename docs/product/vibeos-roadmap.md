@@ -746,6 +746,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   3 one-vCPU boots, 0 in 3 four-vCPU boots). Still owed to smp-bringup: settle whether that guard is a false positive on
   stale union links. Under `--smp 4` the payload wedged on a different bug, fixed below.
 
+- **netstack: BUGCHECK 0xA writing a TCP receive into an unmapped buffer (open, found
+  2026-11-22, graviton lane).** One Chrome payload boot (`--no-net`, one vCPU; run
+  20261122-094733-aQAAcc) in about twenty that day: `memcpy` at DISPATCH_LEVEL writing
+  `fffff8807406815c` (Param1), from smoltcp `tcp::Socket::recv_slice` called by
+  netstack-rust `tditrans.rs` `bridge` (the legacy receive-IRP path, `buf` captured when
+  the IRP was queued), with afd.sys `DisconnectComplete` on the same stack. Suspected: a
+  queued receive whose buffer AFD released on disconnect is still filled by the bridge.
+  Resolve driver frames with `vibeos-cli sym --serial <log> netstack.sys+0x...`.
+
 - **amd64 `-smp 4` Chrome payload: a CPU spins forever releasing a thread's ApcQueueLock
   (FIXED 2026-11-21, graviton lane).** 3 of 3 boots wedged right after chrome.exe spawned
   (run 20261121-190024-EhsfzY; desktop boots passed): one CPU in
