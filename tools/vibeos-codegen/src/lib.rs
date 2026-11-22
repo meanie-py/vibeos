@@ -20,6 +20,7 @@ pub mod ref_protos;
 pub mod resources;
 pub mod rpc;
 pub mod source_walk;
+pub mod sortdefault;
 pub mod tables;
 pub mod ucrt_cases;
 pub mod unorm;

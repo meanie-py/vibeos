@@ -3,6 +3,7 @@ mod build_cli;
 mod cell_cli;
 mod compiler_cli;
 mod marshal_cli;
+mod nls_cli;
 mod module_cli;
 mod payload_cli;
 mod wow64_cli;
@@ -410,13 +411,16 @@ fn main() -> std::process::ExitCode {
             .chain(wow64_cli::NAMES)
             .chain(marshal_cli::NAMES)
             .chain(cell_cli::NAMES)
+            .chain(nls_cli::NAMES)
         {
             println!("{name}");
         }
         return 0.into();
     }
     let name = command_name(&args);
-    match if name.is_some_and(|n| cell_cli::NAMES.contains(&n)) {
+    match if name.is_some_and(|n| nls_cli::NAMES.contains(&n)) {
+        nls_cli::run(args)
+    } else if name.is_some_and(|n| cell_cli::NAMES.contains(&n)) {
         cell_cli::run(args)
     } else if name.is_some_and(|n| compiler_cli::NAMES.contains(&n)) {
         compiler_cli::run(args)

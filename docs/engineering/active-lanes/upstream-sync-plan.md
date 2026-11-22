@@ -54,7 +54,7 @@ payload: `VIBEOS_PAYLOAD=k32winetest ./vibeos-cli build --arch i386 --winetests 
 (281 failures), which the next migration wipes, so re-run a baseline first.
 
 **Owed, next step first.**
-- kernel32:locale **92** (2026-11-22, `/tmp/vibeos-cli/20261122-151112-X0lPvV-smoke-i386`):
+- kernel32:locale **69** (2026-11-22, `/tmp/vibeos-cli/20261122-161357-i5KkLR-smoke-i386`):
   every small cluster is done; what is left is two projects, largest first:
   1. **Sort keys, 90 + 1**: locale.c:3892 checks LCMAP_SORTKEY only. (CORRECTION: the
      CompareString half of test_unicode_sorting is compiled only at DLL_EXPORT_VERSION >=
@@ -138,6 +138,15 @@ data that needs it: 3-byte weights (SM 192..239); COMPRESSION up to 8 code point
 2-3); DOUBLECOMPRESSION (owed item (c), Hungarian); MULTIPLEWEIGHTS; INVERSECASING; JAMOSORT
 (Korean Jamo). Supplementary code points: the DEFAULT table is BMP-only, so a surrogate
 pair keeps today's handling unless the file says otherwise; check before deciding.
+
+**Progress.** (1) DONE `aaf45ec3114`: sortdefault.nls, 3,803,508 bytes (owner OK'd the
+size), deterministic, tamper -> exit 3, MAX_OUTPUT_BYTES 4.5 MB. Expansion keys are
+synthesized as SM 2 + 16-bit index (the source lists expansion code points only under
+EXPANSION; 728 of 730 are absent from DEFAULT), compatibility keys copy their target's.
+(2) DONE: ntsort prefers sortdefault.nls (XP tables as logged fallback); locale -> GUID by
+name with parent fallback, exceptions/compressions binary-searched, compressions up to 8.
+**92 -> 69** (3892: 90 -> 67), no other line moved. Win10 keeps XP's SM assignments except
+digits (12 -> 13); SM_FIRST_LETTER-based accent stripping was unaffected in the A/B.
 
 **Order and measure.** (1) generator + fixtures + cached-run determinism (two runs
 byte-identical); (2) ntsort reads the new layout with the XP rules only: locale.c:3892 A/B

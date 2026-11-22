@@ -50,6 +50,7 @@ the compatibility entry points keep their regeneration instructions working.
 | `nls` | `gen_nls_data_tables.py` | casemap, collation, digitmap Unicode arrays |
 | `msvcrt-errlist` | `gen_msvcrt_errlist.py` | errno strings, pointer order, and count |
 | `unorm` | (new, native only) | Unicode normalization tables for `sdk/lib/rust/unorm-rust` from `vendor/unicode-ucd/<version>/` |
+| `sortdefault` | (new, native only; not in `--all`) | `media/nls/sortdefault.nls` from Microsoft's Windows 10 sorting-weight table, fetched to `~/.cache/vibeos-nls/` (or `$VIBEOS_NLS_CACHE`) and sha256-pinned; the raw table is never committed. `--check` exits 0 match, 1 stale, 3 unverifiable (no cache, no network). |
 
 The default RTL recipe preserves the shipping `STATUS_NOT_SAME_OBJECT` extension
 from `9495f2330ac` and the illegal-instruction provenance comment from `501abe55d05`.
