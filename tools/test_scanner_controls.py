@@ -3750,6 +3750,13 @@ UNCOVERED: dict[str, str] = {
         "NT_ASSERT must be flagged, the faithful one must not, and neither must another "
         "module's same-named C function."
     ),
+    "scan_sizeof_vs_c": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/sizeof_vs_c.rs: crypt32's CRYPT_CopyChainToElement sizing "
+        "CERT_CHAIN_CONTEXT for a CertificateChain must be flagged, the faithful body must not, "
+        "and neither must a C sizeof(var) the Rust spells as the variable's type."
+    ),
     "scan_move_vs_nonoverlapping": (
         "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
         "and known-good fixtures are the unit tests in "
