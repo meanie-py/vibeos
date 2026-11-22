@@ -155,6 +155,33 @@ def native_run_call(run, repo, op, kwargs):
         return session.call(op, kwargs, callbacks=bindings.callbacks)
 
 
+def failure_reasons(rounds) -> tuple[str, list[str]]:
+    """Why a controller's rounds failed: (classification, every reason line).
+
+    A controller that exits non-zero must name what failed; "native controller exited 1"
+    on its own left a gate red nobody could attribute, while the reason sat unread in
+    summary.json's rounds (a ratchet regression, 2026-11-21).
+    """
+    classification, reasons = "", []
+    for r in rounds if isinstance(rounds, list) else []:
+        if not isinstance(r, dict):
+            continue
+        tag = f"{r['arch']}: " if r.get("arch") else ""
+        if r.get("bugcheck"):
+            classification = classification or "BUGCHECK"
+            reasons.append(f"{tag}bugcheck {r['bugcheck']}")
+        if r.get("rust_panics"):
+            classification = classification or "RUST_PANIC"
+            reasons.append(f"{tag}{r['rust_panics']} Rust panic(s)")
+        if r.get("bad"):
+            classification = classification or "CONFORMANCE_BAD"
+            reasons.append(f"{tag}{r['bad']} test(s) failed to run cleanly")
+        for line in r.get("regressions") or []:
+            classification = classification or "RATCHET_REGRESSION"
+            reasons.append(f"{tag}ratchet regression: {line}")
+    return classification, reasons
+
+
 def run_controller(op, args, repo, *, command, arch, extra=None):
     from tools import qemu_infra_compat as native
 
@@ -175,8 +202,13 @@ def run_controller(op, args, repo, *, command, arch, extra=None):
         code = result
     if not bindings.finalized:
         if code:
-            run.add(
-                Stage(command, status="fail", exit=code, detail=f"native controller exited {code}")
-            )
+            classification, reasons = failure_reasons(run.extra.get("rounds"))
+            detail = f"native controller exited {code}"
+            if reasons:
+                more = f" (+{len(reasons) - 1} more, see full.log)" if len(reasons) > 1 else ""
+                detail += f": {reasons[0]}{more}"
+                run.log("\n".join(reasons) + "\n", header=f"{command}: why it exited {code}")
+                run.classification = run.classification or classification
+            run.add(Stage(command, status="fail", exit=code, detail=detail, salient=reasons[:10]))
         run.finalize(repo)
     return code
