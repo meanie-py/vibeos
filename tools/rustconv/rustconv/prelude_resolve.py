@@ -513,6 +513,12 @@ def const_value(item: Item) -> int | None:
     return int(digits, 16) if digits[:2] in ("0x", "0X") else int(digits)
 
 
+def _const_type(item: Item) -> str:
+    """The declared type of a `const NAME: T = ..;`, whitespace-free."""
+    m = re.search(r":\s*(.+?)\s*=", item.text)
+    return re.sub(r"\s+", "", m.group(1)) if m else ""
+
+
 def _abi_class(abi: str | None) -> str:
     a = (abi or '"C"').strip('"')
     return "system" if a in ("system", "stdcall") else a
@@ -684,7 +690,17 @@ def consensus(name: str, items: list[Item]) -> tuple[Item | None, str]:
         if len(values) != 1:
             return None, (f"{len(values)} different values" if values else "no literal definition")
         # An expression definition (`CTL_CODE(...)`) is not evaluated here; it neither
-        # vetoes nor is copied -- the literals that agree are the evidence.
+        # vetoes nor is copied -- the literals that agree are the evidence. But it does vote
+        # on the TYPE. The predefined registry keys are pointer casts, `HKEY = 0x8000_0002u32
+        # as i32 as isize as HKEY`, in a dozen crates, and a literal `usize = 0x8000_0002`
+        # in one. The literal was the only voter, so crypt32 got a `usize` where 18 calls want
+        # an HKEY, with a value that is also wrong on 64-bit, where the C sign-extends.
+        types = [_const_type(i) for i in consts]
+        top = max(set(types), key=lambda t: (types.count(t), t))
+        if types.count(top) > len(types) - types.count(top) and top not in {
+            _const_type(i) for i in literal
+        }:
+            return None, f"type disagreement (the tree says `{top}`, only by expression)"
         return _most_common(literal), ""
     if fns and not consts:
         # A bindgen island is the header's own transcript; a hand-written `extern` is a copy

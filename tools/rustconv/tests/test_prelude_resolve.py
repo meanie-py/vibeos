@@ -43,6 +43,20 @@ def test_an_unevaluated_expression_neither_vetoes_nor_is_copied():
     assert pick is not None and "0x74004" in pick.text
 
 
+def test_a_lone_literal_cannot_outvote_the_trees_type():
+    """crypt32 got `HKEY_LOCAL_MACHINE: usize` from rapps while a dozen crates say HKEY."""
+    hkey = "const HKEY_LOCAL_MACHINE: HKEY = 0x8000_0002u32 as i32 as isize as HKEY;"
+    pick, why = consensus(
+        "HKEY_LOCAL_MACHINE",
+        [
+            C("const HKEY_LOCAL_MACHINE: usize = 0x8000_0002;"),
+            C(hkey, "b.rs"),
+            C(hkey, "c.rs"),
+        ],
+    )
+    assert pick is None and "type disagreement" in why
+
+
 def test_extern_abi_class_must_agree():
     pick, why = consensus(
         "RtlFreeHeap",

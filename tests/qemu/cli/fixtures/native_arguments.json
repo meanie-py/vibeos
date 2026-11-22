@@ -13469,7 +13469,10 @@
       "rebuild": false,
       "fn": {
         "callable": "tests.qemu.cli.symbolize:run"
-      }
+      },
+      "serial": null,
+      "kernel_base": null,
+      "image": null
     }
   },
   {
@@ -13491,7 +13494,10 @@
       "rebuild": false,
       "fn": {
         "callable": "tests.qemu.cli.symbolize:run"
-      }
+      },
+      "serial": null,
+      "kernel_base": null,
+      "image": null
     }
   },
   {
@@ -13523,7 +13529,10 @@
       "rebuild": false,
       "fn": {
         "callable": "tests.qemu.cli.symbolize:run"
-      }
+      },
+      "serial": null,
+      "kernel_base": null,
+      "image": null
     }
   },
   {
@@ -13554,7 +13563,10 @@
       "rebuild": true,
       "fn": {
         "callable": "tests.qemu.cli.symbolize:run"
-      }
+      },
+      "serial": null,
+      "kernel_base": null,
+      "image": null
     }
   },
   {

@@ -786,32 +786,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `test_fiber_actctx`'s switch on amd64; that guard is removed. The first arm64 winetest grade
   anywhere: `--rostests` cannot produce arm64 media (ntdll_winetest and a dozen apitests do not
   compile there), hence `--winetests`.
-- **i386: a second wined3d in one process cannot create a GL context, and the legacy fallback
-  then faults in Mesa (open, found 2026-11-05, root-caused 2026-11-06).** Found by the d3d8/d3d9
-  `device` cases, both variants, so below the front ends. The traced i386 case
-  (`d3d9.device-i386`, `gl trace`: wined3d's TRACE on the serial line) shows the whole sequence.
-  The probe's bad-SDK `Direct3DCreate9(1)` succeeds (wined3d ignores the version) and its first
-  adapter init gets a 3.3 **core** context normally. The second `Direct3DCreate9`'s init then
-  fails `wglCreateContextAttribsARB` for 4.4, 3.2 and 1.0 alike, last error 8
-  (ERROR_NOT_ENOUGH_MEMORY), and wined3d silently keeps its bootstrap context -- a 3.3
-  *Compatibility* profile -- so the legacy-only quirk tests run, and `match_broken_arb_fog`'s
-  immediate-mode draw faults in Mesa (`movss %xmm2,(%edx)`, EDX = 0; the six wined3d return
-  addresses symbolize coherently at load base 0x830000: match_broken_arb_fog <-
-  wined3d_adapter_init_gl_caps <- wined3d_adapter_gl_init <- _create <- wined3d_init <-
-  wined3d_create). amd64 and arm64 run the same two inits and pass. Ruled out: Mesa alone
-  (glsanity runs wined3d's exact core-profile `draw_test_quad` sequence clean on the i386
-  guest, and the Windows host runs it clean in both context-delete orders) and the loader's
-  dynamic TLS, and the probe's own leak (it never released the bad-SDK object; it does now,
-  and nothing changed). **Measured** (the probe's `dx_vm`, `trace` runs only): one wined3d
-  init + release takes the process from 17M reserved / 1530M largest free region to 1530M
-  reserved / 122M largest free, in 24 new allocations, the biggest a single 512M reservation --
-  the power-of-two shape of the heap's segment doubling (`RtlpExtendHeap`:
-  `SegmentReserve += ReserveSize`, inherited from the C, `sdk/lib/rtl/heap.c:1356`). Harmless
-  in a 64-bit process, fatal in 2G. Next: confirm the 512M block is a heap segment (walk
-  `RtlWalkHeap`/`HeapWalk` segment entries) and find what drives the heap to hundreds of MB at
-  peak (Mesa softpipe's per-context allocations below the 508K virtual-block threshold are the
-  suspect); then whether wined3d should fail loudly instead of keeping a legacy context it never
-  asked for.
+- **i386: a second wined3d in one process could not create a GL context (FIXED 2026-11-21,
+  shell32-com lane; found 2026-11-05).** Both the C and Rust d3d8/d3d9 `device` cases failed,
+  and the cause was the user-mode heap, inherited from `sdk/lib/rtl/heap.c`.
+  `RtlpDeCommitFreeBlock` kept a committed page between consecutive freed blocks, so their
+  decommitted ranges were each one page too small to hold a block of the same size again.
+  Mesa softpipe allocates about 200M of 262K tile caches per context. Every new context
+  therefore reserved a fresh doubling heap segment, and two adapter inits used up the 2G
+  address space. The second init's `wglCreateContextAttribsARB` then failed with error 8, and
+  wined3d's legacy fallback faulted in Mesa. Fix in `rtl-heap`: a free entry that starts at an
+  existing uncommitted range's end merges into that range. glsanity's identical second round
+  now reuses round 1's 272M instead of reserving 256M more. The d3d8/d3d9/ddraw `device` cases
+  now also run on i386. Field manual: "A user-mode heap that reserves a new segment for space
+  it already freed". **Still owed:** when every attribs request fails, wined3d silently keeps
+  a compatibility-profile bootstrap context it never asked for, and its legacy-only quirk
+  tests then fault in Mesa. It should fail the adapter init loudly instead.
 - **arm64: PCI I/O-space BARs are never translated, so a port-I/O PCI device cannot work
   (open, found 2026-11-05).** The AC97 binds on arm64 (after its INF gained an NTARM64 models
   section) and then fails START: `AC97 Common: PrimaryCodecReady timed out!`. On arm64
@@ -980,10 +969,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `FatVerifyVolume`, and counted no create/read/disk statistics (empty C stand-ins, now
   `stats.rs`). Findings the agents raised that are NOT bugs here: open-coded asserts and
   `DbgBreakPoint`s that mirror `NT_ASSERT` -- this build is `DBG=1`, so the C's asserts are
-  live too. Still open, as decisions rather than bugs: cdfs's `FILE_OPEN_REQUIRING_OPLOCK`
-  block is `#[cfg(any())]` although the crate builds `ntddi_win8` (its FCB oplock layout is
-  the pre-WIN8 one); fastfat's `FatCommonCreateCallout` lacks the C's try/except but is dead
-  below WINTHRESHOLD. Known left as-is: fastfat's oplock stand-ins (`FsRtlOplockBreakH`
+  live too. The two open decisions were settled 2026-11-21: cdfs now refuses
+  `FILE_OPEN_REQUIRING_OPLOCK` with STATUS_INVALID_PARAMETER, as Windows 11's CDFS does while
+  FAT32 and NTFS open the file (fsquery `oplockopen`, winref `20261121-173426-fIMkD3`), and
+  fastfat's `FatCommonCreateCallout` has the C's try/except (still unreachable below
+  WINTHRESHOLD). Known left as-is: fastfat's oplock stand-ins (`FsRtlOplockBreakH`
   SUCCESS, `FsRtlCheckOplockEx` ignoring Flags: ntoskrnl stubs them at 0xA00+),
   `KeAcquireSpinLockRaiseToDpc` in `rust_cohab_fat.c` (raises IRQL, takes no lock: UP-only),
   cdfs's `FsRtlIsLeadDbcsCharacter` stand-in (always FALSE, DBCS OEM code pages),

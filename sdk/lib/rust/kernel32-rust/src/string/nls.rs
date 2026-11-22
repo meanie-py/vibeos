@@ -2908,6 +2908,10 @@ pub unsafe extern "system" fn NlsGetCacheUpdateCount() -> ULONG {
     return 0 as ULONG;
 }
 
+/// Wine's IsNLSDefinedString: TRUE when every code unit has a defined sort weight, i.e. is
+/// C1_DEFINED, is not private-use, and surrogates come in high-low pairs. It reports FALSE
+/// for an undefined string without touching the last error. The C was a stub that said
+/// TRUE to everything and set ERROR_CALL_NOT_IMPLEMENTED.
 #[no_mangle]
 pub unsafe extern "system" fn IsNLSDefinedString(
     Function: NLS_FUNCTION,
@@ -2916,71 +2920,128 @@ pub unsafe extern "system" fn IsNLSDefinedString(
     lpString: LPCWSTR,
     cchStr: INT,
 ) -> BOOL {
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
-    if DbgPrint(
-        b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
-        2573i32,
-        b"IsNLSDefinedString\0".as_ptr() as *const i8,
-    ) != 0
-    {
-        DbgPrint(
-            b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-            b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
-            2573i32,
-        );
+    let _ = dwFlags;
+    if Function != COMPARE_STRING {
+        SetLastError(ERROR_INVALID_FLAGS as DWORD);
+        return FALSE;
     }
-    return 1i32;
+    if !lpVersionInformation.is_null() {
+        let size = (*lpVersionInformation).dwNLSVersionInfoSize;
+        if size != core::mem::size_of::<NLSVERSIONINFOEX>() as DWORD
+            && size != NLSVERSIONINFO_V1_SIZE
+        {
+            SetLastError(ERROR_INSUFFICIENT_BUFFER as DWORD);
+            return FALSE;
+        }
+    }
+    // Any negative length means NUL-terminated, the terminator included (Windows accepts
+    // -10 as readily as -1).
+    let len = if cchStr < 0 { lstrlenW(lpString) + 1 } else { cchStr } as usize;
+    let mut i = 0usize;
+    while i < len {
+        let c = *lpString.add(i);
+        if (0xe000..=0xf8ff).contains(&c) || (0xdc00..=0xdfff).contains(&c) {
+            return FALSE;
+        }
+        if (0xd800..=0xdbff).contains(&c) {
+            i += 1;
+            if i == len || !(0xdc00..=0xdfff).contains(&*lpString.add(i)) {
+                return FALSE;
+            }
+            i += 1;
+            continue;
+        }
+        let mut ctype: WORD = 0;
+        crate::string::locale::GetStringTypeW(CT_CTYPE1, &c, 1, &mut ctype);
+        if ctype & C1_DEFINED == 0 {
+            return FALSE;
+        }
+        i += 1;
+    }
+    TRUE
 }
 
+// The version of the sort CompareString implements (string/ntsort.rs, built from the shipped
+// sortkey.nls + sorttbls.nls). Callers persist it next to sort keys and compare it later
+// (IsValidNLSVersion compares all but the low byte), so it only has to be stable and to
+// change when the collation does. It is ours, not any Windows release's.
+const NLS_SORT_VERSION: DWORD = 0x0005_0201;
+
+const LOCALE_ALLOW_NEUTRAL_NAMES: DWORD = 0x0800_0000; // winnls.h
+
+extern "system" {
+    fn LCIDToLocaleName(Locale: LCID, lpName: LPWSTR, cchName: INT, dwFlags: DWORD) -> INT;
+    fn LocaleNameToLCID(lpName: LPCWSTR, dwFlags: DWORD) -> LCID;
+}
+
+// Byte size of the pre-Vista NLSVERSIONINFO (offsetof(NLSVERSIONINFO, dwEffectiveId)): a
+// caller passing exactly that gets the two version fields and nothing past them.
+const NLSVERSIONINFO_V1_SIZE: DWORD = 3 * core::mem::size_of::<DWORD>() as DWORD;
+
+/// Wine's GetNLSVersion: the LCID becomes a name (neutral names allowed, so 0x0c, "fr",
+/// resolves) and GetNLSVersionEx does the rest. The C was a stub that reported success
+/// without writing anything, so callers read back their own uninitialised buffer.
 #[no_mangle]
 pub unsafe extern "system" fn GetNLSVersion(
     Function: NLS_FUNCTION,
     Locale: LCID,
     lpVersionInformation: LPNLSVERSIONINFO,
 ) -> BOOL {
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
-    if DbgPrint(
-        b"(%s:%d) %s() is unimplemented!()\n\0" as *const u8 as PCSTR,
-        b"dll/win32/kernel32/winnls/string/nls.c\0"
-            as *const u8 as *const ::core::ffi::c_char,
-        2586 as ::core::ffi::c_int,
-        b"GetNLSVersion\0" as *const u8 as *const ::core::ffi::c_char,
-    ) != 0
-    {
-        DbgPrint(
-            b"(%s:%d) DbgPrint() failed!\n\0" as *const u8 as PCSTR,
-            b"dll/win32/kernel32/winnls/string/nls.c\0"
-                as *const u8 as *const ::core::ffi::c_char,
-            2586 as ::core::ffi::c_int,
-        );
+    let mut name: [WCHAR; LOCALE_NAME_MAX_LENGTH as usize] = [0; LOCALE_NAME_MAX_LENGTH as usize];
+    if (*lpVersionInformation).dwNLSVersionInfoSize < NLSVERSIONINFO_V1_SIZE {
+        SetLastError(ERROR_INSUFFICIENT_BUFFER as DWORD);
+        return FALSE;
     }
-    return TRUE;
+    if LCIDToLocaleName(
+        Locale,
+        name.as_mut_ptr(),
+        LOCALE_NAME_MAX_LENGTH as INT,
+        LOCALE_ALLOW_NEUTRAL_NAMES,
+    ) == 0
+    {
+        SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+        return FALSE;
+    }
+    GetNLSVersionEx(Function, name.as_ptr(), lpVersionInformation as LPNLSVERSIONINFOEX)
 }
 
+/// Wine's GetNLSVersionEx. Only COMPARE_STRING has a version; the buffer is either the full
+/// NLSVERSIONINFOEX or exactly the old three-DWORD NLSVERSIONINFO. guidCustomVersion is
+/// GUID_NULL, as on Windows 7 and earlier: the per-locale sort GUIDs come from Windows 8's
+/// sortdefault.nls, which our collation does not use, and a GUID naming a table we do not
+/// sort by would be a lie IsValidNLSVersion callers could act on.
 #[no_mangle]
 pub unsafe extern "system" fn GetNLSVersionEx(
     function: NLS_FUNCTION,
     lpLocaleName: LPCWSTR,
     lpVersionInformation: LPNLSVERSIONINFOEX,
 ) -> BOOL {
-    SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
-    if DbgPrint(
-        b"(%s:%d) %s() is unimplemented!()\n\0".as_ptr() as *const i8,
-        b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
-        2599i32,
-        b"GetNLSVersionEx\0".as_ptr() as *const i8,
-    ) != 0
-    {
-        DbgPrint(
-            b"(%s:%d) DbgPrint() failed!\n\0".as_ptr() as *const i8,
-            b"dll/win32/kernel32/winnls/string/nls.c\0".as_ptr() as *const i8,
-            2599i32,
-        );
+    let info = &mut *lpVersionInformation;
+    if function != COMPARE_STRING {
+        SetLastError(ERROR_INVALID_FLAGS as DWORD);
+        return FALSE;
     }
-    return 1i32;
+    let full = core::mem::size_of::<NLSVERSIONINFOEX>() as DWORD;
+    if info.dwNLSVersionInfoSize < full && info.dwNLSVersionInfoSize != NLSVERSIONINFO_V1_SIZE {
+        SetLastError(ERROR_INSUFFICIENT_BUFFER as DWORD);
+        return FALSE;
+    }
+    // LocaleNameToLCID(L"") is LOCALE_INVARIANT, NULL is the user default; an unknown name
+    // fails with ERROR_INVALID_PARAMETER, which is what Windows reports here too. No
+    // LOCALE_ALLOW_NEUTRAL_NAMES: Windows reports "fr" as effective id 0x040c, not 0x000c.
+    let lcid = LocaleNameToLCID(lpLocaleName, 0);
+    if lcid == 0 {
+        SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+        return FALSE;
+    }
+    info.dwNLSVersion = NLS_SORT_VERSION;
+    info.dwDefinedVersion = NLS_SORT_VERSION;
+    if info.dwNLSVersionInfoSize >= full {
+        info.dwEffectiveId = lcid;
+        info.guidCustomVersion = core::mem::zeroed();
+    }
+    TRUE
 }
-
 
 // ============================================================================
 // ORIGINAL C SOURCE

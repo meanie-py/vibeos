@@ -714,8 +714,10 @@ int main(int argc, char **argv)
     dx_wined3d();
     create = (CREATE9)dx_proc("Direct3DCreate9");
     /* wined3d ignores the SDK version, so this is a whole second d3d9 with its own wined3d
-     * adapter; leaked, it left the i386 guest's next adapter init unable to create any GL
-     * context (ERROR_NOT_ENOUGH_MEMORY) -- roadmap "Known bugs". */
+     * adapter: two adapter inits in one process. Each holds two Mesa softpipe contexts
+     * (~200M of 262K heap blocks apiece), and until the heap merged a freed block's
+     * decommitted pages into the range before it (rtl-heap RtlpDeCommitFreeBlock) the second
+     * init could not reuse the first's and exhausted the i386 address space. */
     dx_vm("start");
     d3d = create(1);
     printf("create bad sdk %d\n", d3d != NULL);
@@ -724,6 +726,7 @@ int main(int argc, char **argv)
     dx_vm("after first");
     d3d = create(D3D_SDK_VERSION);
     printf("create %d\n", d3d != NULL);
+    dx_vm("after second");
     if (!d3d)
         return DONE();
     hwnd = dx_window();

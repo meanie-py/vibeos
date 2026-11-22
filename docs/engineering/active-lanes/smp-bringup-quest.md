@@ -3,7 +3,23 @@
 **Status: QUEST (2026-07-10, lane `smp-bringup`, worktree
 `~/Projects/os-playground/vibeos-smp`). Handoff doc — read fully before starting.**
 
-## RESUME HERE (2026-11-08, fleet wind-down)
+## RESUME HERE (2026-11-21)
+
+**crypt32-rust compiles on all three arches: `port check crypt32` = 0 errors (was 205)**, with
+no further spend (still $2.16 total). The wip branch is merged into this one and sent to land.
+Hand fixes are banked (`~/vibeos-rust-staging/port/crypt32/hand/`, 69 items), so
+`port replay` keeps them. Two edits sit inside the generated `port macros` block of
+`prelude.rs`: `POINTER_ALIGN_DWORD_PTR` casts to `usize`, and `TRACE_DATA_BLOB` casts
+`cbData` to `c_int`. A `port macros` re-run would revert them, so re-apply them by hand.
+Next (all builds, so after the 2026-11-21 disk hold lifts):
+1. Cohab flip, then the cargo cell, then `vibeos-cli gate`.
+2. Build the `crypt32_c` oracle on one arch (`c_oracle.cmake`, never built yet).
+3. Grade `crypt32winetest` (the Rust) against `crypt32winetestc` (the C as `crypt3c.dll`).
+Done since: crate-repair's `transmute_source_abi` rule now flips a transmute source type's
+`extern "C"` to `"system"` when the function handed to it is `system`. Here that was 47 sites,
+fixed by hand before the rule existed.
+
+### Earlier RESUME HERE (2026-11-08, fleet wind-down)
 
 **crypt32 port is PARKED mid-repair on branch `smp-bringup-crypt32-wip`** (never sent to merge;
 it does not compile yet). To resume, merge that branch into this worktree's branch, then:

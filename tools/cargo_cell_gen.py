@@ -147,6 +147,8 @@ class Cell:
     no_module_type: bool = False
     # (spec, dll) whose stubs a linked static library carries (Linker::spec_stubs_from).
     stub_specs: list[tuple[str, str]] = field(default_factory=list)
+    # (OBJECT library, sources) linked by $<TARGET_OBJECTS> from the module's CMakeLists.
+    sibling_shims: list[tuple[str, list[str]]] = field(default_factory=list)
 
 
 @dataclass

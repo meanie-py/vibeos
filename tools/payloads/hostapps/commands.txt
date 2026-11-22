@@ -6,7 +6,7 @@ set GNUPGHOME=C:\TEMP\gpghome
 timeout 7zip\7z.exe 1200
 # fsquery.c: what an archiver asks about its output; Windows 11's answers on FAT32, NTFS and
 # CDFS are in fsquery.win11.txt.
-fsquery\fsquery.exe C:\TEMP X:\reactos\system32\ntdll.dll
+fsquery\fsquery.exe C:\TEMP X:\reactos\system32\ntdll.dll C:\
 # regsd.c: the hive roots' DACLs, to diff against winref.
 regsd\regsd.exe
 # w11api.c / w11tok.c: Windows 10/11 API contracts; Windows' answers in w11*.win11.txt.

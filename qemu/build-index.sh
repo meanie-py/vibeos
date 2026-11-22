@@ -4,6 +4,8 @@
 #
 # Usage:
 #   qemu/build-index.sh <arch>
+#   qemu/build-index.sh <arch> --one <image> <out.tsv>   # index one saved kernel image
+#                                                        # (e.g. an evidence dir's ntkrnlmp.exe)
 #
 # Writes:
 #   qemu/symbols-<arch>.tsv     # tab-separated: <hex_addr>\t<symbol>\t<source>
@@ -44,6 +46,13 @@ index_one() {
         | uniq > "$out"
     log_info "wrote $(wc -l < "$out") symbols to $out"
 }
+
+if [ "${2:-}" = "--one" ]; then
+    [ -f "${3:-}" ] || die "--one: no such image: ${3:-}"
+    [ -n "${4:-}" ] || die "--one <image> <out.tsv>"
+    index_one "$3" "$4"
+    exit 0
+fi
 
 IMG="$(arch_kernel_image "$ARCH")"
 [ -f "$IMG" ] || die "missing $IMG — build first"
