@@ -4928,7 +4928,7 @@ pub unsafe extern "system" fn SetupDiOpenDeviceInterfaceW(
     /* copy guid */
     wcscpy(
         Buffer.as_mut_ptr(),
-        pEnd.offset(-(37 as isize)),
+        pEnd.offset(-(37 as isize)), // nolint: magic-offset -- 37 WCHARs, a {GUID} string's length (the C's pEnd - 37)
     );
     Buffer[36 as usize] = 0x0000u16;
 

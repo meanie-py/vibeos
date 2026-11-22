@@ -13,80 +13,84 @@ pub struct C2RustUnnamed_3 {
     pub HighPart: LONG,
 }
 
+// offsetof(DDSURFACEDESC2, FIELD) as the C's CMP() macro computes it. c2rust had folded
+// these to their 64-bit values; lpSurface is a pointer, so every field after it is 4 bytes
+// nearer on i386, where the folded table compared the wrong bytes. A field in an anonymous
+// union is named by its union: every member sits at the union's offset.
 static mut compare: [compare_info; 15] = [
         compare_info {
             flag: DDSD_ALPHABITDEPTH as DWORD,
-            offset: 28 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, dwAlphaBitDepth) as ptrdiff_t,
             size: ::core::mem::size_of::<DWORD>() as size_t,
         },
         compare_info {
             flag: DDSD_BACKBUFFERCOUNT as DWORD,
-            offset: 20 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, __bindgen_anon_2) as ptrdiff_t,
             size: ::core::mem::size_of::<DWORD>() as size_t,
         },
         compare_info {
             flag: DDSD_CAPS as DWORD,
-            offset: 112 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, ddsCaps) as ptrdiff_t,
             size: ::core::mem::size_of::<DDSCAPS2>() as size_t,
         },
         compare_info {
             flag: DDSD_CKDESTBLT as DWORD,
-            offset: 56 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, ddckCKDestBlt) as ptrdiff_t,
             size: ::core::mem::size_of::<DDCOLORKEY>() as size_t,
         },
         compare_info {
             flag: DDSD_CKDESTOVERLAY as DWORD,
-            offset: 48 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, __bindgen_anon_4) as ptrdiff_t,
             size: ::core::mem::size_of::<DDCOLORKEY>() as size_t,
         },
         compare_info {
             flag: DDSD_CKSRCBLT as DWORD,
-            offset: 72 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, ddckCKSrcBlt) as ptrdiff_t,
             size: ::core::mem::size_of::<DDCOLORKEY>() as size_t,
         },
         compare_info {
             flag: DDSD_CKSRCOVERLAY as DWORD,
-            offset: 64 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, ddckCKSrcOverlay) as ptrdiff_t,
             size: ::core::mem::size_of::<DDCOLORKEY>() as size_t,
         },
         compare_info {
             flag: DDSD_HEIGHT as DWORD,
-            offset: 8 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, dwHeight) as ptrdiff_t,
             size: ::core::mem::size_of::<DWORD>() as size_t,
         },
         compare_info {
             flag: DDSD_LINEARSIZE as DWORD,
-            offset: 16 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, __bindgen_anon_1) as ptrdiff_t,
             size: ::core::mem::size_of::<DWORD>() as size_t,
         },
         compare_info {
             flag: DDSD_LPSURFACE as DWORD,
-            offset: 40 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, lpSurface) as ptrdiff_t,
             size: ::core::mem::size_of::<LPVOID>() as size_t,
         },
         compare_info {
             flag: DDSD_MIPMAPCOUNT as DWORD,
-            offset: 24 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, __bindgen_anon_3) as ptrdiff_t,
             size: ::core::mem::size_of::<DWORD>() as size_t,
         },
         compare_info {
             flag: DDSD_PITCH as DWORD,
-            offset: 16 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, __bindgen_anon_1) as ptrdiff_t,
             size: ::core::mem::size_of::<LONG>() as size_t,
         },
         compare_info {
             flag: DDSD_REFRESHRATE as DWORD,
-            offset: 24 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, __bindgen_anon_3) as ptrdiff_t,
             size: ::core::mem::size_of::<DWORD>() as size_t,
         },
         compare_info {
             flag: DDSD_TEXTURESTAGE as DWORD,
-            offset: 128 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, dwTextureStage) as ptrdiff_t,
             size: ::core::mem::size_of::<DWORD>() as size_t,
         },
         compare_info {
             flag: DDSD_WIDTH as DWORD,
-            offset: 12 as ::core::ffi::c_ulonglong as ptrdiff_t,
+            offset: core::mem::offset_of!(DDSURFACEDESC2, dwWidth) as ptrdiff_t,
             size: ::core::mem::size_of::<DWORD>() as size_t,
         },
     ];

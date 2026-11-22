@@ -40,7 +40,6 @@ cases:
   # transforms, lights, a managed texture, UP and vertex-buffer draws), read back by hash.
   # `expect` demands the device and a draw, so a renderer wined3d refuses fails here.
   - id: device
-    arches: [amd64, arm64]  # i386: a second wined3d init runs out of address space (roadmap "Known bugs")
     variants:
       c: '%SystemRoot%\bin\modrun\gl_c\ddraw_c.exe'
       rust: '%SystemRoot%\bin\modrun\gl\ddraw_probe.exe'
