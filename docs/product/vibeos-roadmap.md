@@ -726,8 +726,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   threads of the boot's companion apps (`gui64.exe`/`win64.exe` x64 guests, `osk.exe`,
   `magnify.exe`, `taskmgr.exe` under WOW64), then rescued by the 300-tick boost as on Windows.
   The probe's own helper thread starves the same way, which is why a probe could time out
-  after the kernel's context wait had already completed. Untested: whether any of those apps
-  is busier than it should be (Magnifier and Task Manager poll by design). Separately,
+  after the kernel's context wait had already completed. Measured since by the sweep's
+  end-of-run CPU table: osk.exe 27% of the boot (two thirds kernel), magnify.exe 19% (all
+  kernel), idle ~2%; the stalled boots' CPU sat in win32k.sys `DIB_DoRop` (resolved from the
+  new `[MODBASE]` lines). On that load 3 of 8 Chrome boots missed the sweep's deadline. The
+  Chrome payload now boots QUIET (`quiet: true`; winlogon skips its test ladder): 3/3 pass,
+  40 min against 93-98, no starvation boosts (run 20261122-044146-4XMySS). Still open: why osk
+  is that busy. Its main thread samples in comctl32's `BUTTON_DrawTextCallback` and win32k
+  syscalls, but `paintprobe` (30 plain buttons, native and WOW64) gets no repaints at all,
+  so it is something osk-specific (its comctl32 v6 buttons, a timer, or its hook). Separately,
   multi-process Chrome trips the §9.56 `[RQ5A]` drain-insert guard a few times per boot, always
   a `KiSetPriorityThread` Ready-branch requeue (stamp 9002) at priority 14 (the ERESOURCE owner
   boost) whose stale links form a short ring reaching no PRCB list head (2026-11-21: 2 hits in 1 of
