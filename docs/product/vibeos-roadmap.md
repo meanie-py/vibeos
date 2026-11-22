@@ -825,17 +825,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   turns it into a livelock. Any real resume from sleep would hit it, so the power manager's
   sleep query does not send Windows' cancelling `SET_POWER(S0)` until this is fixed.
 
-- **`SetPixel` on the display surface writes black (open, found 2026-11-07, amd64).** On a
-  `CreateDC("DISPLAY")` DC, `GetPixel` reads the real colours (wallpaper `0xa56e3a`, taskbar
-  `0xc8d0d4`) and `SetPixel` returns the colour it was given, but the pixel then reads back
-  `0x000000`, and stays black after a restore. A 1x1 `PatBlt` with a solid brush round-trips
-  correctly on the same DC. Seen in `tools/payloads/sysfbprobe` runs (`20261107-182550-reYxfy`).
-  Not the display driver: suspect win32k's SetPixel colour translation to the device format.
+- **`SetPixel` on the display surface wrote black (FIXED 2026-11-08 by ccacb417164, verified
+  2026-11-22; found 2026-11-07, amd64).** `SetPixel` lends its colour to the DC's text brush
+  and clears `DIRTY_TEXT` so the blit keeps it. But `DC_vPrepareDCsForBlit` tested an invented
+  `0x08` (`DIRTY_BACKGROUND`) for text, so a DC with a dirty background re-realized the text
+  brush, black, over it. sysfbprobe now round-trips a `SetPixel` on a `CreateDC("DISPLAY")` DC
+  at every screen check, and passes (`20261122-125149-qUYyoT-smoke-amd64`).
 
-- **`SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_ALLCLASSES | DIGCF_PRESENT)` fails with
-  error 31 (open, found 2026-11-07, amd64).** Seen once from the Startup folder, before the
-  PlugPlay service was running, so it may only be that ordering; the CM_* calls failed the
-  same way until the probe waited for the service. Not rechecked with the service up.
+- **`SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_ALLCLASSES | DIGCF_PRESENT)` failed with
+  error 31 (NOT REPRODUCED with PlugPlay up, 2026-11-22; found 2026-11-07, amd64).** It was
+  seen once, from the Startup folder, before the PlugPlay service was running. sysfbprobe now
+  makes the call after waiting for the service and gets 40 present devices
+  (`20261122-125149-qUYyoT-smoke-amd64`). Whether Windows also fails the call before its
+  PnP service is up is unchecked.
 
 - **Fibers did not work on amd64 or arm64 (FIXED 2026-11-06, upstream-sync lane).** Both
   routines a fiber switch needs were unimplemented on 64-bit: amd64's `fiber.S` was an
@@ -881,15 +883,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   held or a create path waits instead of failing; the stack is ks-rust / portcls / ac97.
   Repro: `dsound_probe.exe ks` from `tools/payloads/modrun/probes/dsound.c` (no suite case
   runs it). Artifact: `/tmp/vibeos-cli/20261105-204803-oonv142k-smoke-amd64`.
-- **Running out of memory while creating an image section BUGCHECKs 0x1E instead of failing
-  the load (open, found 2026-11-05).** At the default 512M, the first modrun process to load
-  Mesa's 18 MB `libgallium_wgl.dll` (the d3d8 `device` case) died with an uncaught
-  `STATUS_NO_MEMORY` (0xC0000017) raised in kernel mode; the raise logger's frames name
-  `PeFmtCreateSection`, `MiAllocatePagesForMdl` and `NtReadFile`, but they are stack-scanned and
-  the reported raise site is not a call, so the raising frame is unconfirmed. Windows fails the
-  `NtCreateSection`/`LdrLoadDll` with the status. Repro: drop `vm_memory: 1536M` from
-  `tools/payloads/modrun/payload.yaml`, `MODRUN_SUITES=d3d8`, boot amd64. Artifact:
-  `/tmp/vibeos-cli/20261105-195149-61405khw-smoke-amd64`. modrun now boots with 1.5G.
+- **Running out of memory while loading Mesa BUGCHECKed 0x1E (FIXED by 2026-11-22; found
+  2026-11-05). What remains is a stall: at 512M the guest runs out of physical pages and waits
+  instead of failing the allocation (open).** On 2026-11-05 the first modrun process to load
+  Mesa's 18 MB `libgallium_wgl.dll` (the d3d8 `device` case, default 512M) died on an
+  uncaught `STATUS_NO_MEMORY`. Re-run 2026-11-22 on the same recipe (drop `vm_memory: 1536M`
+  from `tools/payloads/modrun/payload.yaml`, `MODRUN_SUITES=d3d8`, boot amd64): 32 kernel
+  raises of 0xC0000017, every one caught and none bugchecked. They come from `CcMapData`
+  (`cc-rust/src/pin.rs:312`) under cdfs's `CdMapPathTableBlock` ← `CdLookupPathEntry` ←
+  `CdFindPathEntry`, and cdfs's dispatch `try_except` handles them. The likely fix is the
+  2026-11-06 SEH quest batch 2 (6cea71b5e6c), which restored the dead raise-class handlers,
+  `FsRtlCopyRead`'s among them. That is inferred: the November 5 binary, and with it the
+  original raise path, is gone. **Still open:** with `[MM] ... avail 0`, the C d3d8 process
+  never finishes and one thread sits in `WrFreePage` until the 50-minute harness timeout.
+  The live CD has no pagefile, and Windows would refuse the commit (`STATUS_COMMITMENT_LIMIT`)
+  long before physical pages ran out. This belongs with "MM: reserving charges no commit for
+  page tables" (commit accounting). Artifact: `/tmp/vibeos-cli/20261122-112536-sYri3V-smoke-amd64`.
+  modrun keeps 1.5G.
 - **The modrun grader could lose a case's single `[MODRUN] exit` line (FIXED 2026-11-08: `modrun.c` now sends it twice).**
   The smoke failed `d3d8.logic: rust: never finished (no exit line)`, but QEMU's serial log for
   the same run has the line intact (`[MODRUN] exit d3d8.logic rust rc=0x00000000 ms=690
