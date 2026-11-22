@@ -43,8 +43,9 @@ Everything below is landed unless marked. Weekend landings (2026-11-21/22):
   checked chunks), so if it ever recurs, read thread 2's "Chunks allocated" first.
 
 Owed, in order:
-1. The ~70 per arch TUs the sign-compare audit only partly parses: the top first error is
-   "a parameter list without types" (a missing calling-convention macro under borrowed flags).
+1. The ~50 per arch TUs the sign-compare audit still only partly parses (freeldr fixed
+   2026-11-22: its own include dirs must come BEFORE the donor's). What is left is a long
+   tail: wine kernelbase (9, not compiled anywhere), gdi32 (6), crt (6), scattered others.
 2. bank_drift residue: 18 moved hashes no historical master scanner reproduces, all bought in
    sibling worktrees with branch-local scanners (cpp-cluster, gicv3, research,
    rustconv-speedrun, shell32-com). The 357 upstream-moved bodies are upstream-sync's queue.
