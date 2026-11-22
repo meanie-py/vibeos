@@ -151,6 +151,20 @@ pub unsafe extern "system" fn UpdateProcThreadAttribute(
     1
 }
 
+/// The PROC_THREAD_ATTRIBUTE_HANDLE_LIST value of an attribute list built above, as
+/// (first handle, count), or None when the list has no such attribute.
+pub(crate) unsafe fn handle_list_of(lpAttributeList: *mut c_void) -> Option<(*const HANDLE, usize)> {
+    let list = lpAttributeList as *mut ProcThreadAttrList;
+    if list.is_null() {
+        return None;
+    }
+    let attrs = &raw const (*list).attrs as *const ProcThreadAttr;
+    (0..(*list).count as usize)
+        .map(|i| *attrs.add(i))
+        .find(|a| a.attr & !PTA_ADDITIVE == PTA_HANDLE_LIST)
+        .map(|a| (a.value as *const HANDLE, a.size / core::mem::size_of::<HANDLE>()))
+}
+
 #[no_mangle]
 pub unsafe extern "system" fn DeleteProcThreadAttributeList(lpAttributeList: *mut c_void) {
     /* The list owns no allocations (values are caller memory); nothing to free. */

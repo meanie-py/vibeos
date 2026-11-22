@@ -1487,6 +1487,10 @@ unsafe fn _ObpDuplicateHandleCallback(
     let mut status: NTSTATUS;
 
     ret = ((*handle_table_entry).__bindgen_anon_1.ObAttributes & OBJ_INHERIT as ObAttrType != 0) as u8;
+    // PROC_THREAD_ATTRIBUTE_HANDLE_LIST (vibeos, inherit_list.rs): only the listed entries.
+    if ret != 0 && crate::inherit_list::allows(old_entry) == Some(false) {
+        ret = 0;
+    }
     if ret != 0 {
         object_header = ObpGetHandleObject(handle_table_entry);
 
@@ -1581,12 +1585,19 @@ pub unsafe extern "system" fn ObInitProcess(
             return STATUS_PROCESS_IS_TERMINATING;
         }
 
+        // A staged PROC_THREAD_ATTRIBUTE_HANDLE_LIST names entries of the creating process's
+        // own table, so it can only filter inheritance from that process.
+        let filtering = parent as usize == PsGetCurrentProcess() as usize
+            && crate::inherit_list::set_active(true);
         object_table = ExDupHandleTable(
             process,
             parent_table,
             Some(ObpDuplicateHandleCallback),
             OBJ_INHERIT as _,
         );
+        if filtering {
+            crate::inherit_list::set_active(false);
+        }
     } else {
         parent_table = core::ptr::null_mut();
         object_table = ExCreateHandleTable(process);
