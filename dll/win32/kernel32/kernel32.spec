@@ -684,7 +684,7 @@
 @ stdcall GetThreadPriorityBoost(long ptr)
 @ stdcall GetThreadSelectorEntry(long long ptr)
 @ stdcall GetThreadTimes(long ptr ptr ptr ptr)
-@ stdcall -version=0x600+ GetThreadUILanguage()
+@ stdcall GetThreadUILanguage()
 @ stdcall GetTickCount()
 @ stdcall -version=0x600+ -ret64 GetTickCount64()
 @ stdcall GetTimeFormatA(long long ptr str ptr long)
@@ -1801,7 +1801,6 @@
 @ stdcall -version=0x400-0x601 GetSystemTimePreciseAsFileTime(ptr) kernel32_vista.GetSystemTimePreciseAsFileTime
 @ stdcall GetThreadDescription(ptr ptr) kernel32_vista.GetThreadDescription
 @ stdcall -version=0x400-0x5ff GetThreadPreferredUILanguages(long ptr wstr ptr) kernel32_vista.GetThreadPreferredUILanguages
-@ stdcall -version=0x400-0x5ff GetThreadUILanguage() kernel32_vista.GetThreadUILanguage
 @ stdcall -version=0x400-0x5ff -ret64 GetTickCount64() kernel32_vista.GetTickCount64
 @ stdcall -version=0x400-0x5ff GetUILanguageInfo(long wstr wstr ptr ptr) kernel32_vista.GetUILanguageInfo
 @ stdcall -version=0x400-0x5ff GetUserDefaultLocaleName(wstr long) kernel32_vista.GetUserDefaultLocaleName

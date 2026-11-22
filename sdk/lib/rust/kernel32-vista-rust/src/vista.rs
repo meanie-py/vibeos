@@ -690,13 +690,8 @@ pub unsafe extern "system" fn GetThreadPreferredUILanguages(
         && dwFlags & (MUI_MERGE_SYSTEM_FALLBACK | MUI_MERGE_USER_FALLBACK) == 0;
     write_ui_language_list(dwFlags, !only_thread, pulNumLanguages, pwszLanguagesBuffer, pcchLanguagesBuffer)
 }
-#[no_mangle]
-pub unsafe extern "system" fn GetThreadUILanguage() -> LANGID {
-    // No per-thread UI language is ever set here (SetThreadUILanguage keeps none), so the
-    // thread's is the user's, as Windows and Wine answer in that case. Returning 0 made every
-    // caller that asks "is the UI English?" (pdh's whole winetest, among others) skip.
-    GetUserDefaultUILanguage()
-}
+// GetThreadUILanguage lives in kernel32-rust (client/thread.rs) beside SetThreadUILanguage,
+// which owns the per-thread slot; kernel32_vista.spec forwards this DLL's export there.
 #[no_mangle]
 pub unsafe extern "system" fn GetUILanguageInfo(
     _dwFlags: DWORD,
