@@ -592,7 +592,7 @@ runs it.
   Windows (scsiport, 2026-11-21). gpg-agent starts (2026-11-21): netstack picked a port-0 bind's
   ephemeral port only on first send, so libassuan's 127.0.0.1 listener reported port 0 and its
   socket file pointed nowhere; graded by the `w32sock` probe against `w32sock.win11.txt`.
-  Still owed: SVCFAIL on i386 and arm64.
+  The SVCFAIL tripwire logs on all three arches (2026-11-21).
 - **Seed the stub-hit report with real programs.** Its first reading (607 boots: smoke,
   kmtest on all arches, and one amd64 appstorm sweep, which opens every stock app and
   applet): exactly one stub is reached, the SEH smoke probe's deliberate
