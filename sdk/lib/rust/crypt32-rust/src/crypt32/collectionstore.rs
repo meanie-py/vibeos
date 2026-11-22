@@ -658,9 +658,7 @@ pub unsafe extern "system" fn CertAddStoreToCollection(
         SetLastError(E_INVALIDARG as DWORD);
         return (FALSE) as BOOL;
     }
-    if (*collection).hdr.type_ as ::core::ffi::c_uint
-        != E_INVALIDARG as ::core::ffi::c_int as ::core::ffi::c_uint
-    {
+    if (*collection).hdr.type_ != StoreTypeCollection {
         SetLastError(E_INVALIDARG as DWORD);
         return (FALSE) as BOOL;
     }

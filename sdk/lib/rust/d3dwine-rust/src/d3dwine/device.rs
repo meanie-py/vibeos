@@ -2715,7 +2715,7 @@ pub unsafe extern "C" fn wined3d_device_get_clip_status(
     device: *const wined3d_device,
     clip_status: *mut wined3d_clip_status,
 ) -> HRESULT {
-    DPRINT1!(
+    FIXME!(
         "device %p, clip_status %p stub!\n",
         device,
         clip_status

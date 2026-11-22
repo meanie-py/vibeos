@@ -688,7 +688,7 @@ unsafe extern "system" fn d3d9on12_Release(iface: *mut IDirect3DDevice9On12) -> 
     return IDirect3DDevice9Ex_Release(core::ptr::addr_of_mut!((*device).IDirect3DDevice9Ex_iface));
 }
 unsafe extern "system" fn d3d9on12_GetD3D12Device(iface: *mut IDirect3DDevice9On12, iid: *const IID, out: *mut *mut core::ffi::c_void) -> HRESULT {
-    DPRINT1!("iface %p, iid %s, out %p stub!\n", iface, debugstr_guid(iid), out);
+    FIXME!("iface %p, iid %s, out %p stub!\n", iface, debugstr_guid(iid), out);
 
     if out.is_null() {
         return E_INVALIDARG;

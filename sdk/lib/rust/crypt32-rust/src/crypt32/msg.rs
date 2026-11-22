@@ -597,7 +597,7 @@ unsafe extern "C" fn CDataEncodeMsg_Update(
                 }
             }
         }
-        {
+        if _SEH2_Volatile0 != 0 {
             SetLastError(STATUS_ACCESS_VIOLATION as DWORD);
             ret = FALSE as BOOL;
         }
@@ -5395,7 +5395,7 @@ pub unsafe extern "system" fn CryptMsgEncodeAndSignCTL(
     let mut pbCtlContent: *mut BYTE = core::ptr::null_mut();
     let mut cbCtlContent: DWORD = 0;
 
-    DPRINT1!(
+    TRACE!(
         "(%08lx, %p, %p, %08lx, %p, %p)\n",
         dwMsgEncodingType,
         pCtlInfo,
@@ -5406,7 +5406,7 @@ pub unsafe extern "system" fn CryptMsgEncodeAndSignCTL(
     );
 
     if dwFlags != 0 {
-        DPRINT1!("unimplemented for flags %08lx\n", dwFlags);
+        FIXME!("unimplemented for flags %08lx\n", dwFlags);
         return (FALSE) as BOOL;
     }
     ret = CryptEncodeObjectEx(

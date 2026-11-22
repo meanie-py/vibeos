@@ -1081,7 +1081,7 @@ pub unsafe extern "system" fn SHRegEnumUSKeyA(
 ) -> LONG {
     let mut dokey: HKEY;
 
-    DPRINT1!(
+    TRACE!(
         "(%p,%d,%p,%p(%d),%d)\n",
         hUSKey,
         dwIndex,
@@ -1127,7 +1127,7 @@ pub unsafe extern "system" fn SHRegEnumUSKeyA(
         );
     }
 
-    DPRINT1!("no support for SHREGENUM_BOTH\n");
+    FIXME!("no support for SHREGENUM_BOTH\n");
 
     return (ERROR_INVALID_FUNCTION) as LONG;
 }
