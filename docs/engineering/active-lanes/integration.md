@@ -34,30 +34,46 @@ CLI, and that hold is what stops it conducting a train. Do not release it; curre
 never reads it. If a lane on an old commit says its `land` "queued", treat that as a merge
 request and tell it to merge master.
 
-## RESUME HERE (fleet pause, 2026-11-08)
+## RESUME HERE (fleet park, 2026-11-22)
 
-Paused clean. At the pause **master was `020f3e9d249`**, and its last full gate was green on all
-3 arches: `/tmp/vibeos-cli/20261108-181437-bmysf3-gate-i386+amd64+arm64` (/tmp does not
-survive a reboot; re-gate master if you need a fresh artifact). The queue was empty, and every
-lane's RESUME HERE is on master. On restart:
+Parked clean after batches 175-206 (2026-11-21/22). **Master was `d1233231e29`** with its last full
+gate green on all 3 arches: `/tmp/vibeos-cli/20261122-173032-SdYcTz-gate-i386+amd64+arm64`;
+/tmp does not survive a reboot, so re-gate master if you need a fresh artifact. The queue was
+empty and every lane's RESUME HERE is on master.
 
-- **Not submitted on purpose; do not merge unless the lane asks:** `graviton-diag-ctxwait`
-  (rpi-bringup's TEMP kernel diagnostics), `smp-bringup-crypt32-wip` (does not compile), and
-  fex's WIP `522f99989a3` (breaks `cohab_census`).
-- **Host load stretches builds.** Fleet load near 50 put the gate's ninja stage past its
-  3600 s budget (i386 reached [790/837]); the last batches used
-  `VIBEOS_BUILD_TIMEOUT=7200 ./vibeos-cli land --direct --cold --skip-lint`. A quiet host
-  builds in ~30-36 min and needs no override.
-- **Seen in gates, not yet fixed** (each one is in the roadmap registry or noted below):
-  - the arm64 ZwAllocateVirtualMemory concurrent-commit race (failed the first attempt in 2 of
-    ~8 gates, green on retry);
-  - `test_artifact_runtime_real` exceeding pytest's 300 s timeout under load (reported by two
-    lanes; never hit my runs);
-  - the WSL vsock `accept4 failed 110` in `test_bench_windows`.
-  - Fixed forward this session: `test_native_vm` treated ESRCH as alive (`957a48e2784`), and
-    the depfile self-edge on dotted cells (`4a261ce2e98`).
-- `check` already reconfigures a stale `build.ninja` itself, so a CMake-touching batch needs
-  no manual `ninja build.ninja` first.
+**First item next weekend: the `ladder:arm64-fex` gate stage (owed by this lane).** The gate's
+arm64 build has no FEX, so `ladder:arm64` prints "skip" and the arm64 FEX x64 regression from
+`536a9761765` landed green in batch 179 (fixed by fex in batch 202, `7f6450c3d17`). Agreed shape
+(control-plane, fex, integrator, 2026-11-22):
+- `smoke:arm64` stays on plain shipping media.
+- A separate stage `ladder:arm64-fex` on its own `build-arm64-fex` (`VIBEOS_FEX=1`, ~5.5G),
+  wired into the gate tool, not an env var set by hand.
+- It never skips: it provisions `build-fex-arm64` (`tools/fex/build-fex.sh`; fex measured a
+  cold run at 57 s and 25M on a loaded host, ccache does not apply) and `build-arm64-fex` when
+  absent, then calls `smoke --arch arm64 --ladder` unconditionally. That path already fails red
+  with `LADDER_MEDIA_INCOMPLETE` / `LADDER_GUESTS_STALE` (smoke_run.rs). The only skip today is
+  `gate_run.rs` mapping `staged=false` to "skip"; leave that mapping alone for the existing
+  `ladder:{i386,amd64,arm64}` stages. No ladder-side knob is needed (fex checked).
+- `build-fex-hello` already exists in vibeos-integration; `build-fex-arm64` does not.
+
+**Disk.** `/data` ran down from 224G (after the AI caches moved to D:) to ~80G in a day of
+gates. Batch 175 failed DISK_ADMISSION_FAIL before that move. `vibeos-cli prune` cannot get its
+exclusive lock while any CLI command runs, so it only applies with the fleet idle; a
+per-worktree lock is owed in control-plane's lane. Check `vibeos-cli disk-status` before a
+batch: a cold 3-arch gate requests ~36G above the 20G floor.
+
+**Flakes.** The arm64 ZwAllocateVirtualMemory "race" was a kmtest bug (conformance,
+`5d426a3dcaa`, batch 197) and is fixed. The `test_ladder` drain-test flake is fixed
+(`afd0d2b91f6`). The /proc ESRCH race class is now a lint (`scan_proc_esrch`). Still open:
+`test_artifact_runtime_real` timing out under load (not seen here), WSL vsock in
+`test_bench_windows`, and the gui32 GetPixel readback fex saw 1 in 15 on arm64 FEX.
+
+**Load.** Load average 25-30 stretched builds; batches from 198 used
+`VIBEOS_BUILD_TIMEOUT=7200`. Gates ran 7-65 min.
+
+**Not for merge unless the lane asks:** `smp-bringup-msxml3-wip` (the msxml3 Rust crate,
+parked). `graviton-diag-ctxwait` and `smp-bringup-crypt32-wip` still exist and were never
+submitted; crypt32 itself was flipped from `smp-bringup` in batch 187.
 
 ## A merge request
 
