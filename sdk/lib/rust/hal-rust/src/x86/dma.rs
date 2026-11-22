@@ -338,9 +338,9 @@ pub unsafe extern "C" fn HalpInitDma() {
     unsafe {
         HalpDmaOperations.PutDmaAdapter = Some(core::mem::transmute(HalPutDmaAdapter as usize));
         HalpDmaOperations.AllocateCommonBuffer =
-            Some(core::mem::transmute(HalAllocateCommonBuffer as usize));
+            Some(HalAllocateCommonBuffer);
         HalpDmaOperations.FreeCommonBuffer =
-            Some(core::mem::transmute(HalFreeCommonBuffer as usize));
+            Some(HalFreeCommonBuffer);
         HalpDmaOperations.AllocateAdapterChannel =
             Some(core::mem::transmute(IoAllocateAdapterChannel as usize));
         HalpDmaOperations.FlushAdapterBuffers =
@@ -351,19 +351,19 @@ pub unsafe extern "C" fn HalpInitDma() {
             Some(core::mem::transmute(IoFreeMapRegisters as usize));
         HalpDmaOperations.MapTransfer = Some(core::mem::transmute(IoMapTransfer as usize));
         HalpDmaOperations.GetDmaAlignment =
-            Some(core::mem::transmute(HalpDmaGetDmaAlignment as usize));
+            Some(HalpDmaGetDmaAlignment);
         HalpDmaOperations.ReadDmaCounter =
             Some(core::mem::transmute(HalReadDmaCounter as usize));
         HalpDmaOperations.GetScatterGatherList =
-            Some(core::mem::transmute(HalGetScatterGatherList as usize));
+            Some(HalGetScatterGatherList);
         HalpDmaOperations.PutScatterGatherList =
-            Some(core::mem::transmute(HalPutScatterGatherList as usize));
+            Some(HalPutScatterGatherList);
         HalpDmaOperations.CalculateScatterGatherList =
-            Some(core::mem::transmute(HalCalculateScatterGatherListSize as usize));
+            Some(HalCalculateScatterGatherListSize);
         HalpDmaOperations.BuildScatterGatherList =
-            Some(core::mem::transmute(HalBuildScatterGatherList as usize));
+            Some(HalBuildScatterGatherList);
         HalpDmaOperations.BuildMdlFromScatterGatherList =
-            Some(core::mem::transmute(HalBuildMdlFromScatterGatherList as usize));
+            Some(HalBuildMdlFromScatterGatherList);
 
         if HalpBusType == MACHINE_TYPE_EISA as ULONG {
             // EISA presence probe — write+read DMA controller 2 page register.
@@ -388,7 +388,7 @@ pub unsafe extern "C" fn HalpInitDma() {
 
         // Register the PnP DMA-adapter dispatch (used by IoGetDmaAdapter).
         HalDispatchTable.HalGetDmaAdapter =
-            Some(core::mem::transmute(HalpGetDmaAdapter as usize));
+            Some(HalpGetDmaAdapter);
     }
 }
 
@@ -1298,7 +1298,7 @@ pub unsafe extern "system" fn HalBuildScatterGatherList(
             adapter,
             &raw mut (*ctx).wcb,
             num_map_regs,
-            Some(core::mem::transmute(HalpScatterGatherAdapterControl as usize)),
+            Some(HalpScatterGatherAdapterControl),
         );
         if !nt_success(status) {
             if !using_user_buffer {
@@ -1479,7 +1479,7 @@ unsafe fn ex_initialize_work_item(
     unsafe {
         (*item).List.Flink = ptr::null_mut();
         (*item).List.Blink = ptr::null_mut();
-        (*item).WorkerRoutine = Some(core::mem::transmute(routine as usize));
+        (*item).WorkerRoutine = Some(routine);
         (*item).Parameter = context;
     }
 }

@@ -41,9 +41,9 @@ const STATUS_NOT_IMPLEMENTED: NTSTATUS = 0xC0000002u32 as NTSTATUS;
 pub unsafe extern "system" fn HalpRegisterKdSupportFunctions() {
     unsafe {
         HalPrivateDispatchTable.KdSetupPciDeviceForDebugging =
-            Some(core::mem::transmute(HalpSetupPciDeviceForDebugging as usize));
+            Some(HalpSetupPciDeviceForDebugging);
         HalPrivateDispatchTable.KdReleasePciDeviceforDebugging =
-            Some(core::mem::transmute(HalpReleasePciDeviceForDebugging as usize));
+            Some(HalpReleasePciDeviceForDebugging);
 
         // Vista+ map/unmap entry points.  Our HAL targets >= NTDDI_VISTA
         // (matches the C #if NTDDI_VERSION >= NTDDI_VISTA branch).
@@ -60,7 +60,7 @@ pub unsafe extern "system" fn HalpRegisterKdSupportFunctions() {
         HalPrivateDispatchTable.KdUnmapVirtualAddress = Some(HalpUnmapVirtualAddress);
 
         HalPrivateDispatchTable.KdCheckPowerButton =
-            Some(core::mem::transmute(HalpCheckPowerButton as usize));
+            Some(HalpCheckPowerButton);
     }
 }
 

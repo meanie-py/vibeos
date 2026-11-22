@@ -209,16 +209,16 @@ pub unsafe extern "system" fn HalInitSystem(
             // doesn't unify them — transmute through `as _` casts.  Same
             // for the C-side ntoskrnl exports we're stuffing into the
             // private dispatch table.
-            HalDispatchTable.HalQuerySystemInformation = Some(core::mem::transmute(HaliQuerySystemInformation as usize));
-            HalDispatchTable.HalSetSystemInformation = Some(core::mem::transmute(HaliSetSystemInformation as usize));
-            HalDispatchTable.HalInitPnpDriver = Some(core::mem::transmute(HaliInitPnpDriver as usize));
-            HalDispatchTable.HalGetDmaAdapter = Some(core::mem::transmute(HalpGetDmaAdapter as usize));
+            HalDispatchTable.HalQuerySystemInformation = Some(HaliQuerySystemInformation);
+            HalDispatchTable.HalSetSystemInformation = Some(HaliSetSystemInformation);
+            HalDispatchTable.HalInitPnpDriver = Some(HaliInitPnpDriver);
+            HalDispatchTable.HalGetDmaAdapter = Some(HalpGetDmaAdapter);
             HalDispatchTable.HalGetInterruptTranslator = None; // FIXME: TODO
             // INT10/VGA-BIOS display reset removed (no fast486 / x86bios). The
             // kernel's default HalResetDisplay is NULL (see halstub) and callers
             // null-check it; on a GOP framebuffer there is no text mode to reset.
             HalPrivateDispatchTable.HalResetDisplay = None;
-            HalPrivateDispatchTable.HalHaltSystem = Some(core::mem::transmute(HaliHaltSystem as usize));
+            HalPrivateDispatchTable.HalHaltSystem = Some(HaliHaltSystem);
 
             // Stitch the default I/O space into the address-usage list.
             (*(&raw mut HalpDefaultIoSpace)).Next = HalpAddressUsageList;

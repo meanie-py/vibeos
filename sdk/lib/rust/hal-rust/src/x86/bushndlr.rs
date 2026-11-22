@@ -548,12 +548,12 @@ pub unsafe extern "system" fn HaliRegisterBusHandler(
 
             // Default stubs.  extern "system" and "stdcall" share ABI on i386
             // but differ at the Rust type level; transmute around it.
-            (*bus).Handler.GetBusData = Some(core::mem::transmute(HalpNoBusData as usize));
-            (*bus).Handler.SetBusData = Some(core::mem::transmute(HalpNoBusData as usize));
+            (*bus).Handler.GetBusData = Some(HalpNoBusData);
+            (*bus).Handler.SetBusData = Some(HalpNoBusData);
             (*bus).Handler.AdjustResourceList =
-                Some(core::mem::transmute(HalpNoAdjustResourceList as usize));
+                Some(HalpNoAdjustResourceList);
             (*bus).Handler.AssignSlotResources =
-                Some(core::mem::transmute(HalpNoAssignSlotResources as usize));
+                Some(HalpNoAssignSlotResources);
 
             if ExtraData != 0 {
                 (*bus).Handler.BusData = bus.add(1) as PVOID;
@@ -686,27 +686,27 @@ pub unsafe extern "system" fn HalpInitBusHandler() {
         {
             // HAL_PRIVATE_DISPATCH wiring — register/handler/config dispatchers.
             HalPrivateDispatchTable.HalRegisterBusHandler =
-                Some(core::mem::transmute(HaliRegisterBusHandler as usize));
+                Some(HaliRegisterBusHandler);
             HalPrivateDispatchTable.HalHandlerForBus =
-                Some(core::mem::transmute(HaliHandlerForBus as usize));
+                Some(HaliHandlerForBus);
             HalPrivateDispatchTable.HalHandlerForConfigSpace =
-                Some(core::mem::transmute(HaliHandlerForConfigSpace as usize));
+                Some(HaliHandlerForConfigSpace);
 
             // HAL_DISPATCH wiring — public reference/dereference paths (these
             // are FASTCALL on i386 since `pHalReferenceBusHandler` is FASTCALL).
             HalDispatchTable.HalReferenceHandlerForBus =
-                Some(core::mem::transmute(HaliReferenceHandlerForBus as usize));
+                Some(HaliReferenceHandlerForBus);
             HalDispatchTable.HalReferenceBusHandler =
-                Some(core::mem::transmute(HaliReferenceBusHandler as usize));
+                Some(HaliReferenceBusHandler);
             HalDispatchTable.HalDereferenceBusHandler =
-                Some(core::mem::transmute(HaliDereferenceBusHandler as usize));
+                Some(HaliDereferenceBusHandler);
         }
 
         // Three more dispatchers — common region in C (always compiled).
         HalPrivateDispatchTable.HalPciAssignSlotResources =
             Some(core::mem::transmute(HalpAssignSlotResources as usize));
         HalPrivateDispatchTable.HalPciTranslateBusAddress =
-            Some(core::mem::transmute(HaliTranslateBusAddress as usize));
+            Some(HaliTranslateBusAddress);
         // C: `if (!HalFindBusAddressTranslation) HalFindBusAddressTranslation = ...`
         // Read the static field once into a local so we don't take a shared ref
         // to the mutable static (clippy/Rust-2024 footgun).
@@ -714,7 +714,7 @@ pub unsafe extern "system" fn HalpInitBusHandler() {
             .read_unaligned();
         if cur.is_none() {
             HalPrivateDispatchTable.HalFindBusAddressTranslation =
-                Some(core::mem::transmute(HaliFindBusAddressTranslation as usize));
+                Some(HaliFindBusAddressTranslation);
         }
     }
 }
