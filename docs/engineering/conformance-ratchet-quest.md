@@ -41,6 +41,11 @@ Everything below is landed unless marked. Weekend landings (2026-11-21/22):
   integrator 2026-11-22; check `land-status --tip 5d426a3dcaa`). Roadmap entry marked FIXED.
   The soak that verified it never reached the fixed branch (thread 2 ran out past the 50
   checked chunks), so if it ever recurs, read thread 2's "Chunks allocated" first.
+- Control-plane's explorer-class audit of the 87 Rust-body cells that link `<t>_shims` as
+  an archive: only netapi32 (netdfs_c.o) and pcix (usage.o) dropped a member, on all three
+  arches, and neither changed the PE contract. Both now link whole (5ad25d4ae81, batch 202).
+- test_ladder's two 0.01 s drain tests run on the `drain_clock` fixture (afd0d2b91f6,
+  batch 202): batch 196's tooling flake.
 
 Owed, in order:
 1. The ~50 per arch TUs the sign-compare audit still only partly parses (freeldr fixed

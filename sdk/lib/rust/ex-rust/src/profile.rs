@@ -111,7 +111,7 @@ pub unsafe extern "system" fn ExpInitializeProfileImplementation() -> u8 {
     ObjectTypeInitializer.DefaultNonPagedPoolCharge = core::mem::size_of::<_KPROFILE>() as ULONG;
     ObjectTypeInitializer.GenericMapping = ExpProfileMapping;
     ObjectTypeInitializer.PoolType = NonPagedPool as u32;
-    ObjectTypeInitializer.DeleteProcedure = core::mem::transmute(ExpDeleteProfile as usize);
+    ObjectTypeInitializer.DeleteProcedure = Some(ExpDeleteProfile);
     ObjectTypeInitializer.ValidAccessMask = PROFILE_ALL_ACCESS;
     ObjectTypeInitializer.InvalidAttributes = OBJ_OPENLINK;
     let Status = ObCreateObjectType(

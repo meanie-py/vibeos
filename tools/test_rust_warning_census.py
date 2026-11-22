@@ -378,3 +378,31 @@ def test_the_recheck_target_is_outside_every_dir_the_deny_gate_reads(tmp_path):
     target = tmp_path / "sdk" / "lib" / "rust" / "target"
     (target / "census-check-amd64").mkdir(parents=True)
     assert c.cell_target_dirs(tmp_path, "amd64") == []
+
+
+def test_a_unit_on_a_custom_target_is_a_nightly_unit(tmp_path):
+    def fp(*parts):
+        return tmp_path.joinpath(*parts, "release", ".fingerprint", "x-rust-0000000000000000")
+
+    assert c.unit_toolchain(fp("body-storage-v1-i386-ab-1-rustlib", "i686-kernel")) == "nightly"
+    assert (
+        c.unit_toolchain(fp("body-storage-v1-i386-ab-1-rustlib", "i686-pc-windows-gnu")) == "stable"
+    )
+    assert c.unit_toolchain(fp("rust-shared-2-target")) == "stable"  # host build
+
+
+def test_a_lint_no_toolchain_knows_is_refused_not_counted_as_zero(tmp_path, monkeypatch):
+    import os
+
+    repo = tmp_path / "repo"
+    src = repo / "sdk" / "lib" / "rust" / "a-rust" / "src"
+    src.mkdir(parents=True)
+    (src / "lib.rs").write_text("")
+    os.utime(src / "lib.rs", (1000, 1000))
+    target = repo / "build-i386" / "t" / "i686-pc-windows-gnu" / "release"
+    fp = _unit(target, "a-rust", "0" * 16, ["a-rust/src/lib.rs"], None)
+    os.utime(fp / "invoked.timestamp", (2000, 2000))
+    (repo / "rust-toolchain.toml").write_text('[toolchain]\nchannel = "1.92.0"\n')
+    monkeypatch.setattr(c, "known_lints", lambda tc: frozenset({"dead_code"}))
+    assert c.main(["--lint", "function_casts_as_integer", str(repo / "build-i386")]) == 2
+    assert c.main(["--lint", "dead_code", str(repo / "build-i386")]) == 0

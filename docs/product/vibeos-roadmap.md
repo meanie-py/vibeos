@@ -602,6 +602,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64 FEX: every x64 guest that catches an exception jumped to pc 0 (FIXED on branch
+  wow64-amd64 2026-11-22, landing; fex lane).** Since `536a9761765` (OutputDebugStringA raises
+  `DBG_PRINTEXCEPTION_C` for real, which is correct), every arm64 FEX x64 ladder guest that
+  imports a DLL exited 0xc0000005. Red: `20261122-133824-aJpIbv`. Green at `37bf0962f85`,
+  before that merge: `20261121-210705-XwfSZ7`. Every catch ends in ReactOS's amd64
+  `RtlpRestoreContextInternal`, which reloads DS/ES/FS. FEX refused `mov fs` in 64-bit mode
+  (DecodeFailure), so no block was compiled, and the block linker handed the dispatcher host
+  address 0. Fixed in FEX's OpcodeDispatcher: the selector is stored and the base left alone,
+  as FEX's own hardware note says (vendor patch "64-bit segment selector loads"). **Gate gap,
+  owed (merge-integrator):** the gate builds arm64 without `VIBEOS_FEX=1`, so `ladder:arm64`
+  skipped and this landed green. A `ladder:arm64-fex` stage on its own `build-arm64-fex`, which
+  never skips, is agreed and owed; the integrator writes it after this fix lands.
+- **arm64: a new thread was killed as a stack overflow with its stack barely used (FIXED on
+  branch wow64-amd64 2026-11-22, landing; fex lane).** apc32 rung 5 under FEX, red since
+  2026-11-08. Building an exception or APC frame, KiDispatchException and KiInitializeUserApc
+  faulted the user frame in with one MmAccessFault per page, bottom first. A guard-page hit
+  commits the page but does not map it, so a frame landing on the guard page failed the
+  following MmIsAddressValid. Now `KiFaultInUserFrame` goes top down, retrying after a guard
+  hit (`20261122-121707-bQJnhZ` red, `20261122-130337-mKp7Sw` green).
+
 - **amd64-bios: boot went silent after netstack's TDI self-test timed out (open, 1 in 7,
   found 2026-11-08, fex lane).** In a full gate (`20261108-020815-xRELnn`, two CPUs, NVMe),
   `smoke:amd64-bios` logged `TDI op timed out - IRP still pending`, `CONNECT FAILED
@@ -770,7 +790,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   kernelbase's presence changes what Chrome calls, and that dhcpcsvc's dispatch thread,
   which holds ApiLock while it runs DHCP timeouts (as upstream does), blocks inside it while
   DHCP retries with no network. With the network on, the same media passed 3/3 with no
-  deadlock raise (run 20261122-120932-HrBSDJ), so it needs `--no-net`.
+  deadlock raise (run 20261122-120932-HrBSDJ), so it needs `--no-net`. Not reproduced after
+  cpp-cluster's dhcpcsvc upstream re-port (master `721fb70af35`, which also restored the
+  critical section's "Deadlock: 0x... (owner thread ...)" report): 3/3 `--no-net` boots
+  clean, Chrome's hang still occurring and recovered from (run 20261122-145506-oOy0eZ).
+  Kept open on watch: those hangs were shorter than the failing ones. If it returns, the
+  Deadlock line names the owner; send the run to cpp-cluster.
 
 - **netstack: BUGCHECK 0xA writing a TCP receive into an unmapped buffer (open, found
   2026-11-22, graviton lane).** One Chrome payload boot (`--no-net`, one vCPU; run
@@ -890,14 +915,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   it untranslated (`0xc000`-style port numbers). Windows on ARM translates port resources to
   memory (`CM_RESOURCE_PORT_MEMORY`) in HalTranslateBusAddress / the PCI arbiter. Until then
   the modrun dsound suite grades only its device-free half on arm64 (`logic-nodevice`).
-- **A second KS pin create on the AC97's render pin never completes (open, found 2026-11-05).**
-  After winmm's `waveOutOpen`/`waveOutClose` creates and closes pin 0 (portcls logs
-  `CPortPinWaveCyclic::Init Status 0 PinId 0`), a direct `KsCreatePin` on the same pin blocks in
-  `NtCreateFile` indefinitely; nothing spins (the vCPU samples are elsewhere). A
-  single-instance pin should FAIL the second create, so either the close left the instance
-  held or a create path waits instead of failing; the stack is ks-rust / portcls / ac97.
-  Repro: `dsound_probe.exe ks` from `tools/payloads/modrun/probes/dsound.c` (no suite case
-  runs it). Artifact: `/tmp/vibeos-cli/20261105-204803-oonv142k-smoke-amd64`.
+- **A KS pin create that the miniport refuses never returns to its caller (open, found
+  2026-11-05, narrowed 2026-11-22, amd64).** First filed as "a second create on the AC97's
+  render pin never completes". It was the probe's own bug that made that create fail: it
+  packed `KSPIN_CONNECT` with `pack(1)`, so on 64-bit the kernel read the data format 4 bytes
+  late. With the struct fixed, a second create on pin 0 after winmm's succeeds. A
+  deliberately bad one (zeroed `MajorFormat`) is refused: AC97 `TestDataFormat` "Invalid
+  format type", `CPortPinWaveCyclic::Init Status c000000d`. Then the caller stays in
+  `NtCreateFile` (`ksuser!KsCreatePin` ← `KsiCreateObjectType`) for the whole 180 s timeout.
+  The source path back returns the error with no wait at each step: AC97
+  `NewStream`/`ValidateFormat`, portcls `CPortFilterWaveCyclic::NewIrpTarget`
+  (`Pin->Release()`, then return) and `PcCreatePinDispatch` (completes the IRP), ks-rust
+  `KspCreate`, and iomgr-rust `IopParseDevice`'s failed-create branch. So the next step is a
+  kernel stack of the stuck thread (GDB). Repro: `dsound_probe.exe ks` from
+  `tools/payloads/modrun/probes/dsound.c`. It is not a suite case, because modrun cannot reap
+  a process stuck in the kernel. Artifact: `/tmp/vibeos-cli/20261122-140435-Zsju6z-smoke-amd64`.
 - **Running out of memory while loading Mesa BUGCHECKed 0x1E (FIXED by 2026-11-22; found
   2026-11-05). What remains is a stall: at 512M the guest runs out of physical pages and waits
   instead of failing the allocation (open).** On 2026-11-05 the first modrun process to load

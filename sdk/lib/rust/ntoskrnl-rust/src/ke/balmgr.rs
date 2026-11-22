@@ -183,7 +183,7 @@ pub unsafe extern "system" fn KeBalanceSetManager(Context: PVOID) {
     KeInitializeTimerEx(&mut PeriodTimer as *mut KTIMER, 1);
     KeInitializeDpc(
         &mut ScanDpc as *mut KDPC as *mut _,
-        core::mem::transmute(KiScanReadyQueues as usize),
+        Some(KiScanReadyQueues),
         core::ptr::addr_of_mut!(KiReadyScanLast) as PVOID,
     );
 

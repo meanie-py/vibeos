@@ -690,7 +690,7 @@ unsafe fn IopConnectPassive(
         core::ptr::null_mut(),
         core::ptr::null_mut(),
         // PKSTART_ROUTINE's spelling differs per arch; the convention is NTAPI on all.
-        core::mem::transmute(IopPassiveWorker as usize),
+        Some(IopPassiveWorker),
         p as PVOID,
     );
     if status < 0 {

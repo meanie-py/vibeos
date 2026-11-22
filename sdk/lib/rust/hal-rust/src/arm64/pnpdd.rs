@@ -964,5 +964,5 @@ unsafe extern "C" {
 /// Called from HalInitSystem phase 0.
 pub(crate) unsafe fn register(loader_block: ddk::PLOADER_PARAMETER_BLOCK) {
     super::acpi::record_xsdt(loader_block);
-    HalDispatchTable.HalInitPnpDriver = Some(core::mem::transmute(HaliInitPnpDriver as usize));
+    HalDispatchTable.HalInitPnpDriver = Some(HaliInitPnpDriver);
 }

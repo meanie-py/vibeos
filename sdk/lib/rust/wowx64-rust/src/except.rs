@@ -186,12 +186,20 @@ pub unsafe extern "system" fn WowX64Veh(Info: *mut _EXCEPTION_POINTERS) -> LONG 
     if (*(*Info).ContextRecord).Pc == HostPc && (*(*Info).ContextRecord).Sp == HostSp {
         // A host fault: passed on, and said, because in a guest process a host
         // fault the CPU layer did not claim is about to end it.
+        // With the guest's last known rip: a host fault taken while running guest code
+        // (a JIT helper called through a null pointer) is otherwise unplaceable. The
+        // CPU layer's rip is the start of the block it was in, not the instruction.
+        let mut Guest: WowX64Context = core::mem::zeroed();
+        let Have = (Cpu.GetContext)(CURRENT_THREAD, CURRENT_PROCESS, null_mut(), &mut Guest) >= 0;
         crate::trace!(
-            "host exception %08lx at pc %p (address %p), CPU-layer thread state %p — not the guest's",
+            "host exception %08lx at pc %p lr %p (address %p), CPU-layer thread state %p, guest rip %p rsp %p — not the guest's",
             (*(*Info).ExceptionRecord).ExceptionCode,
             HostPc as *const c_void,
+            (*(*Info).ContextRecord).__bindgen_anon_1.__bindgen_anon_1.Lr as *const c_void,
             (*(*Info).ExceptionRecord).ExceptionInformation[1] as *const c_void,
             (*NtCurrentTeb()).WOW32Reserved,
+            if Have { Guest.Rip } else { 0 } as *const c_void,
+            if Have { Guest.Rsp } else { 0 } as *const c_void,
         );
         return EXCEPTION_CONTINUE_SEARCH;
     }
