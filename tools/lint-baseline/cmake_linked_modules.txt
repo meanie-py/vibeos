@@ -1,5 +1,4 @@
 audio_test: linked by cmake, not a cargo cell
-browseui: linked by cmake, not a cargo cell
 crtdll: linked by cmake, not a cargo cell
 dbghelp: linked by cmake, not a cargo cell
 explorer: linked by cmake, not a cargo cell
@@ -15,7 +14,6 @@ msvcrt: linked by cmake, not a cargo cell
 msvcrt20: linked by cmake, not a cargo cell
 msvcrt40: linked by cmake, not a cargo cell
 rapps.com: linked by cmake, not a cargo cell
-rshell: linked by cmake, not a cargo cell
 setuplib: linked by cmake, not a cargo cell
 setuplib_probe: linked by cmake, not a cargo cell
 skiplist_test: linked by cmake, not a cargo cell

@@ -1046,7 +1046,10 @@ pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_
                 .filter(|v| *v != "PRIVATE" && *v != "PUBLIC")
                 .map(|v| v.trim_matches('"'))
                 .collect();
-            if !opts.is_empty()&&opts.iter().all(|o|re(r"^-Wl,--subsystem,[\w:.]+$").is_match(o)) {} else if !opts.is_empty()&&opts.iter().all(|o|re(r"^(?:LINKER:|-Wl,)--require-defined=[^,\s]+(?:,--require-defined=[^,\s]+)*$").is_match(o)){f["require_defined"]=json!(true);}else {f["unknown"].as_array_mut().unwrap().push(json!(cmd));}
+            // `-Wl,--allow-multiple-definition` (browseui, under if(LTCG)) is on every link
+            // already: the toolchain's LINK_FLAGS and every cell's (reactos-link), so it is a
+            // no-op wherever it sits.
+            if !opts.is_empty()&&opts.iter().all(|o|re(r"^-Wl,--subsystem,[\w:.]+$|^-Wl,--allow-multiple-definition$").is_match(o)) {} else if !opts.is_empty()&&opts.iter().all(|o|re(r"^(?:LINKER:|-Wl,)--require-defined=[^,\s]+(?:,--require-defined=[^,\s]+)*$").is_match(o)){f["require_defined"]=json!(true);}else {f["unknown"].as_array_mut().unwrap().push(json!(cmd));}
         } else if cmd == "set_subsystem" && a.len() == 2 {
             f["set_subsystem"] = json!(subsystem_flag(&a[1]));
         } else if cmd == "set_entrypoint" && (a.len() == 2 || a.len() == 3) {
@@ -1990,7 +1993,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             // C++ compiles the same way: the cell replays cmake's compile command through a
             // clib recipe, whose `cxx` lines reactos-link runs with the cxx.<arch>.flags template.
             let mut src = obj_source(&cmake_dir, obj);
-            if let Some(lib) = sibling_object_lib(obj, target, &cmtext) {
+            if let Some((lib, src)) = sibling_object_lib(root, obj, target, &cmtext) {
                 if !src.exists() {
                     return Err(Error::new(format!(
                         "{target}: {lib}'s {name} has no source"
@@ -2226,20 +2229,28 @@ pub fn spec_imported_exports(path: &Path) -> Result<std::collections::BTreeSet<S
 }
 
 /// Resolve the object path under its target directory, preserving source subdirectories.
-/// The OBJECT library, other than the target itself, whose object dir `obj` is in, when
-/// the module's own CMakeLists defines it (`add_library(shdocvw_sublib OBJECT`).
-fn sibling_object_lib(obj: &str, target: &str, cmtext: &str) -> Option<String> {
-    let lib = re(r"/CMakeFiles/([^/]+)\.dir/").captures(obj)?[1].to_owned();
-    if lib == target
-        || !re(&format!(
-            r"add_library\(\s*{}\s+OBJECT\b",
-            regex::escape(&lib)
-        ))
-        .is_match(cmtext)
-    {
+/// The OBJECT library, other than the target itself, whose object dir `obj` is in, and the
+/// source it compiled: one the module's own CMakeLists defines (`add_library(shdocvw_sublib
+/// OBJECT`) or the CMakeLists of the object's own directory does (browseui's shellbars and
+/// shellfind, in subdirectories, which rshell links too).
+fn sibling_object_lib(
+    root: &Path,
+    obj: &str,
+    target: &str,
+    cmtext: &str,
+) -> Option<(String, PathBuf)> {
+    let m = re(r"^(?:(.*)/)?CMakeFiles/([^/]+)\.dir/(.+)\.obj$").captures(obj)?;
+    let dir = m.get(1).map_or("", |d| d.as_str());
+    let (lib, rest) = (m[2].to_owned(), m[3].replace("__/", "../"));
+    if lib == target {
         return None;
     }
-    Some(lib)
+    let pattern = format!(r"add_library\(\s*{}\s+OBJECT\b", regex::escape(&lib));
+    let theirs = std::fs::read_to_string(root.join(dir).join("CMakeLists.txt")).unwrap_or_default();
+    if !re(&pattern).is_match(cmtext) && !re(&pattern).is_match(&theirs) {
+        return None;
+    }
+    Some((lib, root.join(dir).join(rest)))
 }
 pub fn obj_source(cmake_dir: &Path, obj: &str) -> PathBuf {
     let path = re(r"/CMakeFiles/[^/]+\.dir/(.+)\.obj$")
@@ -2485,17 +2496,30 @@ mod sibling_tests {
     use super::sibling_object_lib;
 
     #[test]
-    fn a_sibling_object_library_is_named_only_when_this_cmakelists_defines_it() {
+    fn a_sibling_object_library_is_named_only_where_a_cmakelists_defines_it() {
+        let root = std::env::temp_dir().join(format!("sibling-{}", std::process::id()));
+        let sub = root.join("dll/win32/browseui/shellbars");
+        std::fs::create_dir_all(&sub).unwrap();
+        std::fs::write(
+            sub.join("CMakeLists.txt"),
+            "add_library(shellbars OBJECT ${SOURCE})\n",
+        )
+        .unwrap();
         let text = "add_library(shdocvw_sublib OBJECT\n    CFavBand.cpp)\n";
         let obj = "dll/win32/shdocvw/CMakeFiles/shdocvw_sublib.dir/CFavBand.cpp.obj";
-        assert_eq!(
-            sibling_object_lib(obj, "shdocvw", text).as_deref(),
-            Some("shdocvw_sublib")
-        );
-        // The target's own objects, and an object library defined elsewhere, are not.
+        let (lib, src) = sibling_object_lib(&root, obj, "shdocvw", text).unwrap();
+        assert_eq!(lib, "shdocvw_sublib");
+        assert_eq!(src, root.join("dll/win32/shdocvw/CFavBand.cpp"));
+        // Defined in the object's own (sub)directory, its source is read from there.
+        let bars = "dll/win32/browseui/shellbars/CMakeFiles/shellbars.dir/CBandSite.cpp.obj";
+        let (lib, src) = sibling_object_lib(&root, bars, "browseui", "").unwrap();
+        assert_eq!(lib, "shellbars");
+        assert_eq!(src, sub.join("CBandSite.cpp"));
+        // The target's own objects, and an object library no CMakeLists defines, are not.
         let own = "dll/win32/shdocvw/CMakeFiles/shdocvw.dir/shdocvw_main.c.obj";
-        assert_eq!(sibling_object_lib(own, "shdocvw", text), None);
+        assert_eq!(sibling_object_lib(&root, own, "shdocvw", text), None);
         let other = "sdk/lib/x/CMakeFiles/gcc_ssp_x.dir/ssp.c.obj";
-        assert_eq!(sibling_object_lib(other, "shdocvw", text), None);
+        assert_eq!(sibling_object_lib(&root, other, "shdocvw", text), None);
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

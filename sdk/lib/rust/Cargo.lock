@@ -761,6 +761,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "browseui-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "bthci-cargo"
 version = "0.1.0"
 dependencies = [
@@ -7995,6 +8003,14 @@ dependencies = [
 
 [[package]]
 name = "rsaenh-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "rshell-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-lean",
