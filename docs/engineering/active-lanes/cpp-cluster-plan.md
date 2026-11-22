@@ -62,7 +62,8 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
 its baseline is empty, so `check` fails on any new dead handler. The last batch (the scattered
 DLLs and user32) is described in `dummy-pseh-verdict.md`. The dead-handler burn-down is done;
 what is left is the owed list below. Done since: DbgPrint's `DBG_PRINTEXCEPTION_C` raise
-is ported, and OutputDebugStringA's `!BeingDebugged` bypass is dropped (both 2026-11-21).
+is ported, OutputDebugStringA's `!BeingDebugged` bypass is dropped, and shell32 iconcache's
+7 dropped `ERR`/`FIXME` prints are restored (all 2026-11-21).
 
 - **Gate used per batch:** check, check-tooling, `lint --rules rust_ub_deny` ×3, sehprobe ×3,
   vehprobe ×3 and plain smoke ×3. The sehprobe and vehprobe VERDICT lines are in the
@@ -70,9 +71,6 @@ is ported, and OutputDebugStringA's `!BeingDebugged` bypass is dropped (both 202
 - **Owed:**
   - `DhcpRequestParams` is a stub: the upstream-sync kept the old dhcpcsvc.idl, so its RPC
     (and its `nolint(dead_seh)`) wait on that re-port (roadmap, upstream-sync owed list).
-  - 7 shell32 `iconcache.rs` dropped `ERR`/`FIXME` rows. They existed before the quest;
-    a `scan_dropped_prints` lexer bug hid them, and fixing it in this batch made them
-    visible. They are baselined.
 
 ## Shell extensions (from 2026-10-17)
 
