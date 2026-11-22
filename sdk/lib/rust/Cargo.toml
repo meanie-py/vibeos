@@ -1,5 +1,7 @@
 [workspace]
 members = [
+    "filebrowser-cargo",
+    "explorer-cargo",
     "rshell-cargo",
     "browseui-cargo",
     "shlwapi-cargo",

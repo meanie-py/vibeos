@@ -3141,6 +3141,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "explorer-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "explorer-rust"
 version = "0.1.0"
 dependencies = [
@@ -3225,6 +3233,14 @@ dependencies = [
 
 [[package]]
 name = "feclient-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "filebrowser-cargo"
 version = "0.1.0"
 dependencies = [
  "panic-lean",

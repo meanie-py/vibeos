@@ -1802,7 +1802,7 @@ def test_a_generated_rc_input_behind_a_list_variable_orders_the_cell():
     assert deps == ["${CMAKE_CURRENT_SOURCE_DIR}/m.rgs", "${CMAKE_CURRENT_BINARY_DIR}/m_v1.tlb"]
 
 
-@pytest.mark.parametrize("kind", ["FILE", "FILE_DIR", "LINKER_FILE_NAME"])
+@pytest.mark.parametrize("kind", ["FILE", "LINKER_FILE_NAME"])
 def test_model_refuses_another_cmake_consumer_before_conversion(tmp_path, kind):
     _ratchet_fixture(tmp_path)
     assert g.model("foo", tmp_path).target == "foo"
@@ -1810,6 +1810,23 @@ def test_model_refuses_another_cmake_consumer_before_conversion(tmp_path, kind):
     with pytest.raises(g.GenError, match="other CMakeLists read its file"):
         g.model("foo", tmp_path)
     assert (tmp_path / "sdk/lib/rust/foo-cargo/build.rs").read_text() == "fn main() {}\n"
+
+
+def test_a_consumer_naming_only_the_output_dir_is_carried_not_refused(tmp_path):
+    # rshell copies itself beside explorer.exe via $<TARGET_FILE_DIR:explorer>: a path the
+    # cell's binary dir answers, so the consumer is rewritten with the cell.
+    _ratchet_fixture(tmp_path)
+    _cml(tmp_path, "consumer", 'add_custom_target(copy COMMAND x "$<TARGET_FILE_DIR:foo>/y")\n')
+    c = g.model("foo", tmp_path)
+    assert c.dir_refs == ["consumer/CMakeLists.txt"]
+    # A file that also reads the output itself stays refused.
+    _cml(
+        tmp_path,
+        "consumer",
+        'add_custom_target(copy COMMAND x "$<TARGET_FILE_DIR:foo>" "$<TARGET_FILE:foo>")\n',
+    )
+    with pytest.raises(g.GenError, match="other CMakeLists read its file"):
+        g.model("foo", tmp_path)
 
 
 def test_model_and_rewrite_preserve_nested_sources_with_colliding_basenames(tmp_path):

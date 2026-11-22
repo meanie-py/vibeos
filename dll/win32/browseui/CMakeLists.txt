@@ -22,5 +22,5 @@ add_cargo_module(browseui browseui-cargo browseui.dll
 add_custom_command(TARGET browseui POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy
      "${CMAKE_CURRENT_BINARY_DIR}/browseui.dll"
-     "$<TARGET_FILE_DIR:filebrowser>/browseui.dll"
+     "${CMAKE_BINARY_DIR}/base/shell/filebrowser/browseui.dll"
   COMMENT "Copying to output directory")

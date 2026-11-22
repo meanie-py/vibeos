@@ -577,20 +577,36 @@ extends it from the boot spine to every fully-Rust module.
        explorer.exe and filebrowser.exe) is kept on the cell's custom target, after
        add_cargo_module defines it, with the cell's output for the file genexes. The copies
        are sha256-identical to the cell's output.
+   - **2026-11-21: explorer and filebrowser converted**, EQUIVALENT ×3.
+     - Another CMakeLists that names only the output's directory,
+       `$<TARGET_FILE_DIR:t>` (rshell's and browseui's self-copies beside explorer.exe and
+       filebrowser.exe), is rewritten with the cell to `${CMAKE_BINARY_DIR}/<dir>`, where
+       add_cargo_module copies the output (`Cell::dir_refs`). A file that reads the output
+       itself (`$<TARGET_FILE:t>`) is still refused, since it would need the cell's build
+       ordered before it.
+     - **Every cell now links its own objects whole**, a Rust body or not. explorer was
+       DIFFERENT (fewer imports) because its mediabtns.cpp, which nothing references,
+       pulls libwine's debug_ros.c through ros_dbg_log: cmake links it as an object, and
+       the cell's archive dropped both. A shim that duplicates a body symbol is
+       link-guard's "two local definitions" error, never a silent pick. The rule applies
+       to new conversions; committed build.rs files are unchanged.
    - **RESUME HERE (2026-11-08, fleet pause).**
-     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui and rshell followed, ratchet 27.)*
+     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer and filebrowser followed, ratchet 25.)*
      - The cmake_linked_modules ratchet is at **31**. This week's 24 cells are queued in the
        integrator's combined batch 169+170 on `cells-dotted` 0fa7e73bb5c, which includes
        cells-fusion and cells-exports: the five export holds, fusion ×3, rpcrt4, uniata and
        the 14 dotted targets. First check that 0fa7e73bb5c is an ancestor of origin/master.
        If it bounced, the integrator's message names the gate dir.
      - **Next, by size:**
-       - explorer: rshell's POST_BUILD copy reads `$<TARGET_FILE_DIR:explorer>`;
        - msvcrt: its custom cargo command shape;
        - the nativedll kind (4);
        - the wow64cpu.S / sys-stubs.S asm inputs;
        - the CRTs, dbghelp/libtirpc (elseif branches) and wdmaud.drv (two bodies).
        - Run `tools/codegen cargo-cell <target>` per module for its current refusal.
+     - **Owed (2026-11-21):** audit the committed Rust-body cells against cmake for the
+       explorer class (an unreferenced shim object that cmake loads and the archive
+       drops). pe_equiv proved each at conversion, so a hit would mean a shim was added
+       after its conversion. Re-run `--check` on each body cell to confirm.
      - **Owed:**
        - Audit earlier waves for a cell proven against a stale baseline (see the 11-08
          export-holds entry; the risk is low).
