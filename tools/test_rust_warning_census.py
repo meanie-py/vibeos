@@ -370,3 +370,11 @@ def test_cell_target_dirs_follow_the_list_the_deny_gate_reads(tmp_path):
         "cell-link-v1-amd64-14",
     ]
     assert c.cell_target_dirs(tmp_path / "empty", "amd64") == []
+
+
+def test_the_recheck_target_is_outside_every_dir_the_deny_gate_reads(tmp_path):
+    # rust_ub_deny reads build-<arch> plus cargo_unit_dirs.json. The recheck's units must
+    # be in neither, or the gate's verdict would depend on whether the census had run.
+    target = tmp_path / "sdk" / "lib" / "rust" / "target"
+    (target / "census-check-amd64").mkdir(parents=True)
+    assert c.cell_target_dirs(tmp_path, "amd64") == []

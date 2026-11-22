@@ -472,7 +472,10 @@ def coverage(units: list[Unit]) -> tuple[set[str], dict[str, str]]:
 # left, which the staleness rule above then (correctly) refuses. The store keeps only
 # `body.a`, never rustc's diagnostics, so the census re-derives them itself:
 # `--recheck-store-hits` runs `cargo check` with the EXACT argv and RUSTFLAGS the store's
-# action recorded for this lane's build, into a private target dir under build-<arch>/.
+# action recorded for this lane's build, into sdk/lib/rust/target/census-check-<arch>. That
+# dir is deliberately in NEITHER build-<arch> nor cargo_unit_dirs.json: rust_ub_deny judges
+# what the build compiled, and a gate whose verdict changed with whether someone had run
+# the census would not be a gate.
 # It refuses rather than guesses: an unreadable ref or action is a hard error, never a
 # fallback to default features. A check misses the few lints rustc emits only during
 # codegen, so the coverage line says which crates were checked rather than built.
@@ -573,7 +576,7 @@ def recheck(
     keys = sorted(
         {k for (a, body), ks in actions.items() if a == arch and body in stale for k in ks}
     )
-    target_dir = build_dir.resolve() / "census-check-target"
+    target_dir = repo / "sdk" / "lib" / "rust" / "target" / f"census-check-{arch}"
     manifest = repo / "sdk" / "lib" / "rust" / "Cargo.toml"
     found: dict[str, list[Site]] = defaultdict(list)
     compiled: set[str] = set()
@@ -682,7 +685,7 @@ def main(argv: list[str]) -> int:
         action="store_true",
         help="for crates refused as stale because the artifact store served them, run "
         "`cargo check` with the store action's exact argv/RUSTFLAGS (target dir "
-        "build-<arch>/census-check-target) and count its diagnostics",
+        "sdk/lib/rust/target/census-check-<arch>) and count its diagnostics",
     )
     ap.add_argument("--tier", choices=TIERS, help="list the sites of one tier")
     ap.add_argument("--lint", help="list the sites of one lint")
@@ -812,6 +815,12 @@ def main(argv: list[str]) -> int:
             more = f" +{len(crates) - 4}" if len(crates) > 4 else ""
             print(f"   {len(ss):6d}  {lint:44s} {', '.join(crates[:4])}{more}")
         print()
+    if checked_all:
+        print(
+            f"GAP: {len(checked_all)} arch:crate unit(s) were seen ONLY via --recheck-store-hits "
+            "(the artifact store served them, so no build compiled them here). rust_ub_deny "
+            "does not see these; the gap closes when the store publishes diagnostics per action."
+        )
     if fresh_all:
         print(
             f"coverage (cargo cache): {len(fresh_all)} fresh arch:crate unit(s) read"
