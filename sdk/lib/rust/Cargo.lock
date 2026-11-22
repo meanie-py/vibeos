@@ -9553,6 +9553,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "svchost-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-common",
+ "reactos-link",
+]
+
+[[package]]
 name = "svchost-rust"
 version = "0.1.0"
 dependencies = [

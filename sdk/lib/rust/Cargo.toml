@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "svchost-cargo",
     "ucdfs-cargo",
     "ufatx-cargo",
     "ufat-cargo",
