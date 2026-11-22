@@ -40,6 +40,10 @@ use std::collections::BTreeMap;
 
 pub const SOURCE_URL: &str = "https://download.microsoft.com/download/C/F/7/CF713A5E-9FBC-4FD6-9246-275F65C0E498/Windows%2010%20Sorting%20Weight%20Table.txt";
 pub const SOURCE_SHA256: &str = "81fcfa1e5ed3e3a94d329959ff7d97d522ddf9d653d2c4d6ddcccc5cd4df663f";
+/// sha256 of the committed media/nls/sortdefault.nls. With it `--check` verifies the
+/// committed file offline too, and a regeneration that changes the output has to update
+/// this pin, which shows the change in review.
+pub const OUTPUT_SHA256: &str = "9f84725dfcc658c324264b81fe0414a863aa9a21020d4bcba576eecd847f9632";
 pub const MAGIC: u32 = u32::from_le_bytes(*b"SORT");
 pub const LAYOUT_VERSION: u32 = 1;
 pub const FLAG_REVERSE_DIACRITICS: u32 = 0x1;

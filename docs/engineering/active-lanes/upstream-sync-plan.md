@@ -36,7 +36,43 @@ is a lead.
 
 ---
 
-## RESUME HERE (2026-11-08, fleet wind-down: the "still owed" sweep, branch `upstream-sync-2`)
+## RESUME HERE (2026-11-22, Sunday wind-down; branch `upstream-sync-2`)
+
+**Where it stopped.** kernel32:locale on i386 is **66 failures** (281 on 2026-11-21), run
+`/tmp/vibeos-cli/20261122-164010-sLlDPO-smoke-i386` (tmp; the next migration wipes it, so
+re-run a baseline first). Every commit is landed or queued: verify with
+`git merge-base --is-ancestor <sha> origin/master` for `aaf45ec3114` + `817941ff18a`
+(sortdefault steps 1-2, integrator batch 204 as `9eb9da8bcfc`) and the step-3 commit
+after them. If one bounced, read the integrator's verdict and fix forward.
+
+**How to grade.** `VIBEOS_PAYLOAD=k32winetest ./vibeos-cli build --arch i386 --winetests kernel32`
+then `./vibeos-cli smoke --arch i386 --payload k32winetest`; result in
+`<run>/payload/i386-uefi_serial.log`. A/B by `locale.c:<line>` counts (`uniq -c` + `join`).
+The payload's build.sh regenerates its suite list after a master merge.
+
+**Owed, next first.** All 66 but 2 are test_unicode_sorting's sort keys (locale.c:3892, 64).
+Design and progress: the next section. Steps 1-2 done (92 -> 69); step 3 so far: weightless
+units inside a mark run (72-74 fixed, 69 -> 66). The MULTIPLEWEIGHTS 3-byte primary is
+implemented per the table but changed nothing measurable; the ~25 CJK entries (en-US and
+ja-JP: 35-40, 203-225, 241-243) still fail, so ideographs need something else. Check what
+SM/AW/DW the table gives each pair before guessing. Then: kana/halfwidth (~16, 122-159),
+JAMOSORT (Hangul, 1143/1152/1196 and d1xx), SORT_DIGITSASNUMBERS (259/260), the N'Ko and
+symbol singles. Also left: test_GetNLSVersion could report real sort GUIDs (fr is
+00000003-..., the test's guid_fr) now that sortdefault.nls has them; NormalizeString /
+IsNormalizedString / RtlNormalizeString unwired (unorm-rust has what they need); the
+remaining 2 non-sort lines are 2469 (key length) and 7064 (todo_wine size).
+
+**The source table.** `tools/codegen sortdefault` fetches it to `~/.cache/vibeos-nls/`
+(outside the repo; sha256-pinned). The committed media/nls/sortdefault.nls is pinned too
+(`OUTPUT_SHA256`), so `tools/codegen sortdefault --check` verifies offline. Regenerating to
+a different file needs the pin updated in the same commit.
+
+**Other owed (unchanged):** test_csparentdc's last 10; edit's IME rework; the amd64 magenta
+icon block, the arm64 MM concurrent-commit fault and the i386 cdrom 0x1E one-off
+(roadmap registry).
+
+## Earlier RESUME HERE (2026-11-08, fleet wind-down; superseded, kept for its history)
+
 
 **Where it stopped.** Working down the owed list in the USER32/kernel32 rows of the table below.
 Everything is committed; the last commit (GetCurrencyFormatW) was sent to merge-integrator at
@@ -54,7 +90,7 @@ payload: `VIBEOS_PAYLOAD=k32winetest ./vibeos-cli build --arch i386 --winetests 
 (281 failures), which the next migration wipes, so re-run a baseline first.
 
 **Owed, next step first.**
-- kernel32:locale **69** (2026-11-22, `/tmp/vibeos-cli/20261122-161357-i5KkLR-smoke-i386`):
+- kernel32:locale **66** (2026-11-22, `/tmp/vibeos-cli/20261122-164010-sLlDPO-smoke-i386`):
   every small cluster is done; what is left is two projects, largest first:
   1. **Sort keys, 90 + 1**: locale.c:3892 checks LCMAP_SORTKEY only. (CORRECTION: the
      CompareString half of test_unicode_sorting is compiled only at DLL_EXPORT_VERSION >=
@@ -147,6 +183,9 @@ EXPANSION; 728 of 730 are absent from DEFAULT), compatibility keys copy their ta
 name with parent fallback, exceptions/compressions binary-searched, compressions up to 8.
 **92 -> 69** (3892: 90 -> 67), no other line moved. Win10 keeps XP's SM assignments except
 digits (12 -> 13); SM_FIRST_LETTER-based accent stripping was unaffected in the A/B.
+(3, in progress at the wind-down) Weightless units inside a mark run no longer end it:
+**69 -> 66** (tests 72-74). MULTIPLEWEIGHTS 3-byte primaries implemented, no measured
+change (CJK entries still fail; see RESUME HERE).
 
 **Order and measure.** (1) generator + fixtures + cached-run determinism (two runs
 byte-identical); (2) ntsort reads the new layout with the XP rules only: locale.c:3892 A/B

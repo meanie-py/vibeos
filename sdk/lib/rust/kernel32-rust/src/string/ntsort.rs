@@ -94,6 +94,10 @@ struct Tables {
     w10_n_guids: usize,
     w10_names: usize,
     w10_n_names: usize,
+    /// MULTIPLEWEIGHTS: script-member ranges [first, first + count) whose primary weight is
+    /// three bytes (SM, AW, DW): ideographs and the private use area. None in XP's tables.
+    multi: [(u8, u8); 4],
+    n_multi: usize,
     keys: *const u8,  // the 64K key array (sortkey.nls past its DWORD header)
     tbls: *const u8,  // sorttbls.nls
     tbls_len: usize,
@@ -304,8 +308,12 @@ unsafe fn parse_sortdefault(t: &mut Tables, p: *const u8, len: usize) -> bool {
     let field = |i: usize| rd32(p, i * 4) as usize;
     let (n_guids, guids, n_names, names) = (field(3), field(4), field(5), field(6));
     let (n_exp, exp, keys) = (field(7), field(8), field(15));
+    let (n_multi, multi) = (field(11), field(12));
     let fits = |off: usize, n: usize, size: usize| n.checked_mul(size).and_then(|b| off.checked_add(b)).is_some_and(|e| e <= len);
     if !fits(keys, 0x10000, 4) || !fits(guids, n_guids, W10_GUID_RECORD) || !fits(names, n_names, W10_NAME_RECORD) || !fits(exp, n_exp, 8) {
+        return false;
+    }
+    if n_multi > t.multi.len() || !fits(multi, n_multi, 4) {
         return false;
     }
     for g in 0..n_guids {
@@ -330,7 +338,18 @@ unsafe fn parse_sortdefault(t: &mut Tables, p: *const u8, len: usize) -> bool {
     t.keys = p.add(keys);
     t.expansion = exp;
     t.n_expansion = n_exp as u32;
+    for i in 0..n_multi {
+        t.multi[i] = (*p.add(multi + i * 4), *p.add(multi + i * 4 + 1));
+    }
+    t.n_multi = n_multi;
     true
+}
+
+impl Tables {
+    /// Whether script member `sm` has a three-byte primary weight.
+    fn multi_weight(&self, sm: u8) -> bool {
+        self.multi[..self.n_multi].iter().any(|&(first, n)| sm >= first && (sm as u16) < first as u16 + n as u16)
+    }
 }
 
 /// Bytes per compression entry of `k` code points: k WORDs padded to a DWORD, then a key.
@@ -600,8 +619,9 @@ impl<'a> Locale<'a> {
 /// One element of the sort-key stream.
 #[derive(Clone, Copy)]
 enum Elem {
-    /// A primary element, with its diacritic and (masked) case weight.
-    Weight(u16, u8, u8),
+    /// A primary element (SM<<16 | AW<<8 | third byte, see `primary`), with its diacritic
+    /// and (masked) case weight.
+    Weight(u32, u8, u8),
     /// A word-sort punctuation unit: (primary position, weight).
     Special(u32, u16),
 }
@@ -692,6 +712,12 @@ impl<'a, 'b> Walker<'a, 'b> {
             if self.fold_marks && self.pending.is_none() {
                 while self.i < self.s.len() {
                     let m = self.loc.key(self.s[self.i]);
+                    // A weightless unit (soft hyphen, U+2064, U+FFFD's ignorables) does not
+                    // end the run: "A" U+0301 U+00AD U+0301 equals "A" U+0301 U+0301.
+                    if m.sm == SM_UNSORTABLE && m.aw == 0 && m.dw == 0 && m.cw == 0 {
+                        self.i += 1;
+                        continue;
+                    }
                     if m.sm != SM_NONSPACE_MARK {
                         break;
                     }
@@ -700,11 +726,18 @@ impl<'a, 'b> Walker<'a, 'b> {
                 }
             }
             self.pos += 1;
-            return Some(Elem::Weight(((k.sm as u16) << 8) | k.aw as u16, dw, k.cw & self.cw_mask));
+            // Ideographs and the PUA (MULTIPLEWEIGHTS) carry a three-byte primary: DW is its
+            // third byte, and their diacritic level is the base weight.
+            let mut primary = (k.sm as u32) << 16 | (k.aw as u32) << 8;
+            if self.loc.t.multi_weight(k.sm) {
+                primary |= dw as u32;
+                dw = W_BASE;
+            }
+            return Some(Elem::Weight(primary, dw, k.cw & self.cw_mask));
         }
     }
 
-    unsafe fn next_weight(&mut self) -> Option<(u16, u8, u8)> {
+    unsafe fn next_weight(&mut self) -> Option<(u32, u8, u8)> {
         loop {
             match self.next()? {
                 Elem::Weight(p, d, c) => return Some((p, d, c)),
@@ -738,7 +771,7 @@ unsafe fn level(
     s1: &[u16],
     s2: &[u16],
     flags: DWORD,
-    pick: fn((u16, u8, u8)) -> u16,
+    pick: fn((u32, u8, u8)) -> u32,
     reverse: bool,
     fold_marks: bool,
 ) -> i32 {
@@ -775,12 +808,12 @@ pub unsafe fn nt_compare_string(lcid: LCID, flags: DWORD, s1: &[u16], s2: &[u16]
     }
     // LINGUISTIC_IGNOREDIACRITIC (Vista) ignores the same diacritic level.
     if flags & (NORM_IGNORENONSPACE | LINGUISTIC_IGNOREDIACRITIC) as DWORD == 0 {
-        let r = level(&loc, s1, s2, flags, |w| w.1 as u16, loc.reverse, true);
+        let r = level(&loc, s1, s2, flags, |w| w.1 as u32, loc.reverse, true);
         if r != 0 {
             return Some(r);
         }
     }
-    let r = level(&loc, s1, s2, flags, |w| w.2 as u16, false, false);
+    let r = level(&loc, s1, s2, flags, |w| w.2 as u32, false, false);
     if r != 0 {
         return Some(r);
     }
@@ -842,8 +875,12 @@ unsafe fn write_sort_key(loc: &Locale, flags: DWORD, s: &[u16], w: &mut KeyWrite
     let mut last_cw = 0usize;
     let mut it = Walker::new(loc, s, flags, true);
     while let Some((p, d, c)) = it.next_weight() {
+        let sm = (p >> 16) as u8;
+        w.put(sm);
         w.put((p >> 8) as u8);
-        w.put(p as u8);
+        if loc.t.multi_weight(sm) {
+            w.put(p as u8);
+        }
         count += 1;
         if d != W_BASE {
             last_dw = count;
