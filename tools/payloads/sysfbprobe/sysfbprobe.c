@@ -50,10 +50,10 @@ static int node_started(DEVINST dev, ULONG *problem)
     return (status & DN_STARTED) != 0;
 }
 
-/* The display still works: a 1x1 solid fill reads back. A display DC, not GetDC(NULL),
- * which is the desktop window's and is clipped by the windows over it; PatBlt, not SetPixel,
- * because SetPixel on the display surface writes black here (a GDI bug, not sysfb's: the
- * same DC reads the wallpaper's real colour). */
+/* The display still works: a 1x1 solid fill reads back, and so does a SetPixel. A display
+ * DC, not GetDC(NULL), which is the desktop window's and is clipped by the windows over it.
+ * SetPixel once wrote black here: win32k re-realized the text brush it borrows, because the
+ * blit prepare tested DIRTY_BACKGROUND for DIRTY_TEXT (fixed ccacb417164). */
 static void check_screen(const char *when)
 {
     HDC dc = CreateDCA("DISPLAY", NULL, NULL, NULL);
@@ -76,6 +76,17 @@ static void check_screen(const char *when)
     DeleteDC(dc);
     CHECK(got == RGB(0x12, 0x34, 0x56), "%s: pixel round trip read 0x%06lx (before 0x%06lx)\n", when,
           (ULONG)got, (ULONG)old);
+
+    dc = CreateDCA("DISPLAY", NULL, NULL, NULL);
+    if (dc) {
+        COLORREF was = GetPixel(dc, 1, 0);
+        COLORREF set = SetPixel(dc, 1, 0, RGB(0x65, 0x43, 0x21));
+        COLORREF read = GetPixel(dc, 1, 0);
+        SetPixel(dc, 1, 0, was);
+        DeleteDC(dc);
+        CHECK(read == RGB(0x65, 0x43, 0x21), "%s: SetPixel returned 0x%06lx, read back 0x%06lx\n",
+              when, (ULONG)set, (ULONG)read);
+    }
 }
 
 static void enable_shutdown_privilege(void)
@@ -196,9 +207,9 @@ static void check_owner_veto(DEVINST owner, const char *what)
     CHECK(node_started(owner, NULL), "the %s stopped after refusing\n", what);
 }
 
-/* Device Manager's Disable/Enable: the class installer's DIF_PROPERTYCHANGE, global scope,
- * through the W entry points devmgr uses (SetupDiSetClassInstallParamsA is a stub, as in
- * Wine and upstream). */
+/* Device Manager's Disable/Enable: the class installer's DIF_PROPERTYCHANGE, global scope.
+ * Disable goes through the W entry points devmgr uses; enable through the A ones, which
+ * upstream and Wine never implemented (SetupDiSetClassInstallParamsA returned FALSE). */
 static BOOL change_state(const char *id, DWORD state)
 {
     WCHAR wid[MAX_DEVICE_ID_LEN];
@@ -208,11 +219,24 @@ static BOOL change_state(const char *id, DWORD state)
     SP_PROPCHANGE_PARAMS pc = { { sizeof(SP_CLASSINSTALL_HEADER), DIF_PROPERTYCHANGE }, state, DICS_FLAG_GLOBAL, 0 };
     const char *step = "SetupDiCreateDeviceInfoList";
     BOOL ok = set != INVALID_HANDLE_VALUE;
-    if (ok && !(step = "SetupDiOpenDeviceInfo", SetupDiOpenDeviceInfoW(set, wid, NULL, 0, &data)))
+    BOOL ansi = state == DICS_ENABLE;
+    if (ok && !(step = "SetupDiOpenDeviceInfo",
+                ansi ? SetupDiOpenDeviceInfoA(set, id, NULL, 0, &data)
+                     : SetupDiOpenDeviceInfoW(set, wid, NULL, 0, &data)))
         ok = FALSE;
-    if (ok && !(step = "SetupDiSetClassInstallParams",
-                SetupDiSetClassInstallParamsW(set, &data, &pc.ClassInstallHeader, sizeof(pc))))
+    if (ok && !(step = ansi ? "SetupDiSetClassInstallParamsA" : "SetupDiSetClassInstallParamsW",
+                ansi ? SetupDiSetClassInstallParamsA(set, &data, &pc.ClassInstallHeader, sizeof(pc))
+                     : SetupDiSetClassInstallParamsW(set, &data, &pc.ClassInstallHeader, sizeof(pc))))
         ok = FALSE;
+    if (ok && ansi) {
+        /* What the A entry point stored is what the W side reads back. */
+        SP_PROPCHANGE_PARAMS back = { { sizeof(SP_CLASSINSTALL_HEADER) } };
+        DWORD need = 0;
+        step = "SetupDiGetClassInstallParamsW";
+        ok = SetupDiGetClassInstallParamsW(set, &data, &back.ClassInstallHeader, sizeof(back), &need) &&
+             back.ClassInstallHeader.InstallFunction == DIF_PROPERTYCHANGE && back.StateChange == state &&
+             back.Scope == DICS_FLAG_GLOBAL;
+    }
     if (ok && !(step = "SetupDiCallClassInstaller", SetupDiCallClassInstaller(DIF_PROPERTYCHANGE, set, &data)))
         ok = FALSE;
     if (!ok)
@@ -256,6 +280,20 @@ int main(void)
 {
     wait_plugplay();
     wait_installs();
+
+    /* Every present device of every class, which once failed with error 31 (roadmap "Known
+     * bugs"; seen only from the Startup folder before PlugPlay was up). */
+    HDEVINFO all = SetupDiGetClassDevsA(NULL, NULL, NULL, DIGCF_ALLCLASSES | DIGCF_PRESENT);
+    DWORD n = 0;
+    if (all != INVALID_HANDLE_VALUE) {
+        SP_DEVINFO_DATA d = { sizeof(d) };
+        while (SetupDiEnumDeviceInfo(all, n, &d))
+            n++;
+        SetupDiDestroyDeviceInfoList(all);
+    }
+    SAY("all-classes present devices: %lu (error %lu)\n", n,
+        all == INVALID_HANDLE_VALUE ? GetLastError() : 0);
+    CHECK(all != INVALID_HANDLE_VALUE && n > 0, "SetupDiGetClassDevs(DIGCF_ALLCLASSES) failed\n");
 
     /* ---- step 1: the device nodes ---- */
     DEVINST top;

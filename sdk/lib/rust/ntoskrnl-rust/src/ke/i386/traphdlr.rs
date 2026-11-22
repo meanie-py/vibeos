@@ -1166,6 +1166,15 @@ pub unsafe extern "fastcall" fn KiSystemServiceHandler(
         args = captured.as_mut_ptr() as PVOID;
     }
     let status = KiSystemCallTrampoline(handler, args, stack_bytes as ULONG);
+    if crate::tripwire::VibeSvcTraceArmed != 0 && (status as u32) >= 0xC000_0000 {
+        // `args` is a kernel copy for a user caller and a kernel pointer for a Zw caller;
+        // read only the stack_bytes the service declared.
+        let mut a = [0usize; 6];
+        for (i, slot) in a.iter_mut().enumerate().take(stack_bytes as usize / 4) {
+            *slot = *(args as *const u32).add(i) as usize;
+        }
+        crate::tripwire::svcfail_log(status as u32, system_call_number, a);
+    }
     KiExitSystemCallDebugChecks(id, TrapFrame);
     (*(thread as *mut _ETHREAD)).Tcb.TrapFrame = (*TrapFrame).Edx as PKTRAP_FRAME;
     KiServiceExit(TrapFrame, status);

@@ -1934,6 +1934,7 @@
 @ stdcall SetPriorityClass(long long) kernel32.SetPriorityClass
 @ stdcall SetPrivateObjectSecurity(long ptr ptr ptr long) advapi32.SetPrivateObjectSecurity
 @ stdcall SetProcessInformation(ptr long ptr long) kernel32.SetProcessInformation
+@ stdcall AppContainerRegisterSid(ptr wstr wstr) kernel32.AppContainerRegisterSid
 @ stdcall SetProcessMitigationPolicy(long ptr long) kernel32.SetProcessMitigationPolicy
 @ stdcall SetProcessPriorityBoost(long long) kernel32.SetProcessPriorityBoost
 @ stdcall SetProcessShutdownParameters(long long) kernel32.SetProcessShutdownParameters

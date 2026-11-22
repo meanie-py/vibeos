@@ -1,0 +1,11 @@
+# w32sock on Windows 11 (winref 20261121-184007-q4wfCr-winref-run-x64): every step of libassuan's
+# socket setup succeeds.
+CryptAcquireContext ok
+CryptGenRandom ok
+WSAStartup r=0 version=0202
+socket ok
+bind r=0 err=0
+getsockname r=0 err=0 family=2 len=16 port_nonzero=1 addr=7f000001
+listen r=0 err=0
+socket file write ok=1
+w32sock done

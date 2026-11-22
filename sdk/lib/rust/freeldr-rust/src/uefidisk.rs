@@ -201,7 +201,7 @@ unsafe fn UefiEnsureDiskReadBufferAligned(
 
     Status = (*(*GlobalSystemTable).BootServices).AllocatePool.unwrap()(EfiLoaderData,
                                                            (DiskReadBufferSize + ((RequiredAlignment) as usize)) as UINTN ,
-                                                           &mut DiskReadBufferRaw as *mut _ as *mut *mut core::ffi::c_void);
+                                                           &raw mut DiskReadBufferRaw as *mut _ as *mut *mut core::ffi::c_void);
     if EFI_ERROR(Status) != 0 || DiskReadBufferRaw == core::ptr::null_mut()
     {
         // EFI 1.x firmware (Intel Macs among them) can refuse this; fall back to loader
@@ -1251,12 +1251,12 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
     {
         FrldrBootPartition = 0xFF;
         RtlStringCbPrintfA(
-            FrLdrBootPath.as_mut_ptr() as PCHAR,
-            core::mem::size_of_val(&FrLdrBootPath),
+            (*&raw mut FrLdrBootPath).as_mut_ptr() as PCHAR,
+            core::mem::size_of_val(&*&raw const FrLdrBootPath),
             b"multi(0)disk(0)cdrom(%u)\0".as_ptr() as PCHAR,
             ArcDriveIndex,
         );
-        TRACE!("Boot path set to CD-ROM: %s\n", (FrLdrBootPath.as_ptr()) as usize);
+        TRACE!("Boot path set to CD-ROM: %s\n", ((*&raw const FrLdrBootPath).as_ptr()) as usize);
         // Which ARC branch the boot handle took -- one line, and it is the first
         // thing worth knowing when a boot device behaves unexpectedly.
         crate::uefildr::fldr_conout(crate::wide!("[FLDR] arc branch = CDROM\r\n\0"));
@@ -1318,13 +1318,13 @@ unsafe fn UefiSetBootpath() -> BOOLEAN {
         }
 
         RtlStringCbPrintfA(
-            FrLdrBootPath.as_mut_ptr() as PCHAR,
-            core::mem::size_of_val(&FrLdrBootPath),
+            (*&raw mut FrLdrBootPath).as_mut_ptr() as PCHAR,
+            core::mem::size_of_val(&*&raw const FrLdrBootPath),
             b"multi(0)disk(0)rdisk(%u)partition(%lu)\0".as_ptr() as PCHAR,
             ArcDriveIndex,
             BootPartition,
         );
-        TRACE!("Boot path set to hard disk: %s\n", (FrLdrBootPath.as_ptr()) as usize);
+        TRACE!("Boot path set to hard disk: %s\n", ((*&raw const FrLdrBootPath).as_ptr()) as usize);
         crate::uefildr::fldr_conout(
             crate::wide!("[FLDR] arc branch = HARDDISK+partition\r\n\0"),
         );
@@ -1424,9 +1424,9 @@ pub unsafe extern "C" fn UefiInitializeBootDevices() -> BOOLEAN {
         Checksum = (!Checksum).wrapping_add(1);
         TRACE!("CD-ROM Checksum: %x\n", (Checksum) as usize);
 
-        AddReactOSArcDiskInfo(FrLdrBootPath.as_mut_ptr(), core::ptr::null(), Signature, Checksum, 1u8);
+        AddReactOSArcDiskInfo((*&raw mut FrLdrBootPath).as_mut_ptr(), core::ptr::null(), Signature, Checksum, 1u8);
 
-        FsRegisterDevice(FrLdrBootPath.as_ptr(), core::ptr::addr_of!(UefiDiskVtbl));
+        FsRegisterDevice((*&raw const FrLdrBootPath).as_ptr(), core::ptr::addr_of!(UefiDiskVtbl));
         TRACE!("Registered CD-ROM boot device: 0x%02X\n", (FrldrBootDrive as i32) as usize);
     }
 

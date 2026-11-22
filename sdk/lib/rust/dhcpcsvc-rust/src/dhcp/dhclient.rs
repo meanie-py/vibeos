@@ -301,6 +301,8 @@ unsafe fn setup_adapter(Adapter: *mut DHCP_ADAPTER, new_lease: *mut client_lease
     const INIT_STR: &[u8] = b"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\\0";
     let mut Buffer: [i8; 200] = [0i8; 200];
     core::ptr::copy_nonoverlapping(INIT_STR.as_ptr() as *const i8, Buffer.as_mut_ptr(), INIT_STR.len());
+    let mut AddressBuffer: [i8; 32] = [0i8; 32];
+    let mut addr: in_addr = core::mem::zeroed();
 
     strcat(Buffer.as_mut_ptr(), (*Adapter).DhclientInfo.name.as_ptr());
 
@@ -315,20 +317,17 @@ unsafe fn setup_adapter(Adapter: *mut DHCP_ADAPTER, new_lease: *mut client_lease
     }
 
     // The option length is attacker-controlled (it comes off the wire from whichever
-    // host answers DHCP first) and the memcpy below targets iaddr::iabuf, which is 16
-    // bytes. A subnet mask is exactly one ULONG; anything else is malformed.
+    // host answers DHCP first). A subnet mask is exactly one ULONG; anything else is
+    // malformed, and is rejected with a warning rather than read.
     // Upstream-Commit: ed367320c29 (#9056)
-    if (*new_lease).options[DHO_SUBNET_MASK as usize].len == core::mem::size_of::<u32>() as _ {
-        let mut netmask: iaddr = core::mem::zeroed();
-        memcpy(
-            (netmask.iabuf.as_mut_ptr() as *mut core::ffi::c_void) as *mut c_void,
-            ((*new_lease).options[DHO_SUBNET_MASK as usize].data as *const core::ffi::c_void) as *const c_void,
-            ((*new_lease).options[DHO_SUBNET_MASK as usize].len) as usize,
-        );
-
+    let mask_len = (*new_lease).options[DHO_SUBNET_MASK as usize].len;
+    let mask_data = (*new_lease).options[DHO_SUBNET_MASK as usize].data;
+    if mask_len == core::mem::size_of::<u32>() as i32 {
+        // Option data is a byte buffer; the C's `*(ULONG*)` read is unaligned-tolerant on x86
+        // only, so read it explicitly unaligned.
+        let netmask_val = core::ptr::read_unaligned(mask_data as *const u32);
         let address_val = *((*new_lease).address.iabuf.as_ptr() as *const u32);
-        let netmask_val = *(netmask.iabuf.as_ptr() as *const u32);
-        let Status = AddIPAddress(
+        let err: DWORD = AddIPAddress(
             address_val,
             netmask_val,
             (*Adapter).IfMib.dwIndex,
@@ -336,7 +335,7 @@ unsafe fn setup_adapter(Adapter: *mut DHCP_ADAPTER, new_lease: *mut client_lease
             &mut (*Adapter).NteInstance,
         );
 
-        if !hkey.is_null() {
+        if !hkey.is_null() && err == NO_ERROR {
             let addr_str = piaddr((*new_lease).address);
             RegSetValueExA(
                 hkey,
@@ -347,27 +346,15 @@ unsafe fn setup_adapter(Adapter: *mut DHCP_ADAPTER, new_lease: *mut client_lease
                 (strlen(addr_str) + 1) as u32,
             );
 
-            Buffer[0] = 0;
-            let len_mut = (*new_lease).options[DHO_SUBNET_MASK as usize].len;
-            let data_mut = (*new_lease).options[DHO_SUBNET_MASK as usize].data;
-            for i in 0..len_mut {
-                let pos = strlen(Buffer.as_ptr());
-                sprintf(
-                    Buffer.as_mut_ptr().add(pos),
-                    b"%u\0".as_ptr() as *const i8,
-                    *data_mut.add((i) as usize) as u32,
-                );
-                if (i + 1) < len_mut {
-                    strcat(Buffer.as_mut_ptr(), b".\0".as_ptr() as *const i8);
-                }
-            }
+            addr.S_un.S_addr = netmask_val;
+            RtlIpv4AddressToStringA(&addr, AddressBuffer.as_mut_ptr());
             RegSetValueExA(
                 hkey,
                 "DhcpSubnetMask\0".as_ptr() as *const i8,
                 0,
                 REG_SZ,
-                Buffer.as_ptr() as LPBYTE,
-                (strlen(Buffer.as_ptr()) + 1) as u32,
+                AddressBuffer.as_ptr() as LPBYTE,
+                (strlen(AddressBuffer.as_ptr()) + 1) as u32,
             );
 
             let server_str = piaddr((*new_lease).serveraddress);
@@ -420,18 +407,31 @@ unsafe fn setup_adapter(Adapter: *mut DHCP_ADAPTER, new_lease: *mut client_lease
                 &mut (*new_lease).rebind as *mut _ as LPBYTE,
                 core::mem::size_of::<u32>() as u32,
             );
+            let dwAddressType: DWORD = 0;
+            RegSetValueExA(
+                hkey,
+                "AddressType\0".as_ptr() as *const i8,
+                0,
+                REG_DWORD,
+                &dwAddressType as *const DWORD as LPBYTE,
+                core::mem::size_of::<DWORD>() as u32,
+            );
         }
 
-        if !NT_SUCCESS((Status) as i32) {
-            warning(b"AddIPAddress: %lx\n\0".as_ptr() as *const i8, Status);
+        if err != NO_ERROR {
+            warning(b"AddIPAddress: %d\n\0".as_ptr() as *const i8, err);
         }
+    } else if mask_len != 0 {
+        warning(b"Invalid subnet mask option length: %d\n\0".as_ptr() as *const i8, mask_len);
     }
 
-    // Same wire-controlled length. A router list is a whole number of ULONGs.
+    // Same wire-controlled length. A router list is a whole number of ULONGs. Only the
+    // first router is installed and recorded (formatted as one address, never the whole
+    // list run together, which also overflowed Buffer for long lists).
     // Upstream-Commit: ed367320c29 (#9056)
-    if (*new_lease).options[DHO_ROUTERS as usize].len > 0
-        && (*new_lease).options[DHO_ROUTERS as usize].len % core::mem::size_of::<u32>() as i32 == 0
-    {
+    let routers_len = (*new_lease).options[DHO_ROUTERS as usize].len;
+    let routers_data = (*new_lease).options[DHO_ROUTERS as usize].data;
+    if routers_len > 0 && routers_len % core::mem::size_of::<u32>() as i32 == 0 {
         (*Adapter).RouterMib.dwForwardDest = 0;
         (*Adapter).RouterMib.dwForwardMask = 0;
         (*Adapter).RouterMib.dwForwardMetric1 = 1;
@@ -441,35 +441,28 @@ unsafe fn setup_adapter(Adapter: *mut DHCP_ADAPTER, new_lease: *mut client_lease
             DeleteIpForwardEntry(&mut (*Adapter).RouterMib);
         }
 
-        (*Adapter).RouterMib.dwForwardNextHop =
-            *((*new_lease).options[DHO_ROUTERS as usize].data as *const u32);
+        (*Adapter).RouterMib.dwForwardNextHop = core::ptr::read_unaligned(routers_data as *const u32);
 
-        let Status = CreateIpForwardEntry(&mut (*Adapter).RouterMib);
+        let err: DWORD = CreateIpForwardEntry(&mut (*Adapter).RouterMib);
 
-        if !NT_SUCCESS((Status) as i32) {
-            warning(b"CreateIpForwardEntry: %lx\n\0".as_ptr() as *const i8, Status);
+        if err != NO_ERROR {
+            warning(b"CreateIpForwardEntry: %d\n\0".as_ptr() as *const i8, err);
         }
 
-        if !hkey.is_null() {
-            Buffer[0] = 0;
-            let data_mut = (*new_lease).options[DHO_ROUTERS as usize].data;
-            sprintf(
-                Buffer.as_mut_ptr(),
-                b"%u.%u.%u.%u\0".as_ptr() as *const i8,
-                *data_mut.add(0) as u32,
-                *data_mut.add(1) as u32,
-                *data_mut.add(2) as u32,
-                *data_mut.add(3) as u32,
-            );
+        if !hkey.is_null() && err == NO_ERROR {
+            addr.S_un.S_addr = (*Adapter).RouterMib.dwForwardNextHop;
+            RtlIpv4AddressToStringA(&addr, AddressBuffer.as_mut_ptr());
             RegSetValueExA(
                 hkey,
                 "DhcpDefaultGateway\0".as_ptr() as *const i8,
                 0,
                 REG_SZ,
-                Buffer.as_ptr() as LPBYTE,
-                (strlen(Buffer.as_ptr()) + 1) as u32,
+                AddressBuffer.as_ptr() as LPBYTE,
+                (strlen(AddressBuffer.as_ptr()) + 1) as u32,
             );
         }
+    } else if routers_len != 0 {
+        warning(b"Invalid routers option length: %d\n\0".as_ptr() as *const i8, routers_len);
     }
 
     if !hkey.is_null() {
@@ -559,7 +552,7 @@ unsafe fn reset_adapter(Adapter: *mut DHCP_ADAPTER) {
             0,
             REG_DWORD,
             core::ptr::addr_of!(cur_time) as *mut u8,
-            core::mem::size_of::<time_t>() as DWORD,
+            core::mem::size_of::<DWORD>() as DWORD, // C: sizeof(DWORD), the low half of time_t (LE)
         );
         new_time = cur_time + lease as time_t;
         RegSetValueExA(
@@ -568,7 +561,7 @@ unsafe fn reset_adapter(Adapter: *mut DHCP_ADAPTER) {
             0,
             REG_DWORD,
             core::ptr::addr_of!(new_time) as *mut u8,
-            core::mem::size_of::<time_t>() as DWORD,
+            core::mem::size_of::<DWORD>() as DWORD, // C: sizeof(DWORD), the low half of time_t (LE)
         );
         new_time = cur_time + lease as time_t / 2;
         RegSetValueExA(
@@ -577,7 +570,7 @@ unsafe fn reset_adapter(Adapter: *mut DHCP_ADAPTER) {
             0,
             REG_DWORD,
             core::ptr::addr_of!(new_time) as *mut u8,
-            core::mem::size_of::<time_t>() as DWORD,
+            core::mem::size_of::<DWORD>() as DWORD, // C: sizeof(DWORD), the low half of time_t (LE)
         );
         new_time = cur_time + lease as time_t - lease as time_t / 8;
         RegSetValueExA(
@@ -586,7 +579,16 @@ unsafe fn reset_adapter(Adapter: *mut DHCP_ADAPTER) {
             0,
             REG_DWORD,
             core::ptr::addr_of!(new_time) as *mut u8,
-            core::mem::size_of::<time_t>() as DWORD,
+            core::mem::size_of::<DWORD>() as DWORD, // C: sizeof(DWORD), the low half of time_t (LE)
+        );
+        let dwAddressType: DWORD = 0;
+        RegSetValueExA(
+            hkey,
+            (b"AddressType\0".as_ptr()) as *const i8,
+            0,
+            REG_DWORD,
+            core::ptr::addr_of!(dwAddressType) as *mut u8,
+            core::mem::size_of::<DWORD>() as DWORD,
         );
     }
 
@@ -646,7 +648,36 @@ pub unsafe extern "C" fn dhcp(packet: *mut packet) {
 }
 
 // ---- state_panic ----
+// REG_SZ / REG_DWORD writers for state_panic's many registry values. REG_SZ data includes its
+// NUL (strlen + 1), as every RegSetValueExA call in the C passes.
+unsafe fn panic_reg_set_sz(hKey: HKEY, name: &[u8], value: *const i8) {
+    RegSetValueExA(
+        hKey,
+        name.as_ptr() as *const i8,
+        0,
+        REG_SZ,
+        value as *const BYTE,
+        (strlen(value) + 1) as DWORD,
+    );
+}
+unsafe fn panic_reg_set_dword(hKey: HKEY, name: &[u8], value: DWORD) {
+    RegSetValueExA(
+        hKey,
+        name.as_ptr() as *const i8,
+        0,
+        REG_DWORD,
+        &value as *const DWORD as *const BYTE,
+        core::mem::size_of::<DWORD>() as DWORD,
+    );
+}
+
 unsafe extern "C" fn state_panic(ipp: *mut core::ffi::c_void) {
+    const KEY_PREFIX: &[u8] = b"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters\\Interfaces\\\0";
+    let mut szKeyNameBuffer: [i8; 200] = [0i8; 200];
+    core::ptr::copy_nonoverlapping(KEY_PREFIX.as_ptr() as *const i8, szKeyNameBuffer.as_mut_ptr(), KEY_PREFIX.len());
+    let Server: [u8; 16] = *b"255.255.255.255\0";
+    let SubnetMask: [u8; 12] = *b"255.255.0.0\0";
+    let mut AddressBuffer: [i8; 32] = [0i8; 32];
     let ip: *mut _interface_info = ipp as *mut _interface_info;
     let mut address_low: u16 = 0;
     let mut i: i32 = 0;
@@ -654,57 +685,214 @@ unsafe extern "C" fn state_panic(ipp: *mut core::ffi::c_void) {
     let mut Buffer: [u32; 20] = [0; 20];
     let mut BufferSize: u32 = 0;
     let mut ret: u32 = 0;
+    let mut hKey: HKEY = core::ptr::null_mut();
     let Adapter: *mut _DHCP_ADAPTER = AdapterFindInfo(ip);
+    let mut Status: DWORD;
+    let lease: DWORD = 0;
+    // C: `time_t cur_time, never_time = 0x7FFFFFFF;`, each written as a REG_DWORD of
+    // sizeof(DWORD) bytes, i.e. the low half on these little-endian targets. Truncate explicitly.
+    let mut cur_time: time_t = 0;
+    let never_time: time_t = 0x7FFFFFFF;
+    let mut addr: in_addr = core::mem::zeroed();
+    let mut dwAddressType: DWORD = 0;
 
     note(b"No DHCPOFFERS received.\0".as_ptr() as *const i8);
 
-    if !Adapter.is_null() && (*Adapter).NteContext == 0 {
-        DbgPrint(
-            b"DHCPCSVC: Failed to receive a response from a DHCP server. An automatic private address will be assigned.\n\0"
-                .as_ptr() as *const i8,
+    time(core::ptr::addr_of_mut!(cur_time));
+
+    // DIVERGENCE: the C strcat()s Adapter->DhclientInfo.name BEFORE its own
+    // `if (Adapter && ...)` null check, so a NULL adapter faults here. With no adapter there is
+    // nothing to configure and no key to open, so return (the C's only other effect is the
+    // note above).
+    if Adapter.is_null() {
+        return;
+    }
+
+    strcat(szKeyNameBuffer.as_mut_ptr(), (*Adapter).DhclientInfo.name.as_ptr());
+    if RegOpenKeyExA(HKEY_LOCAL_MACHINE, szKeyNameBuffer.as_ptr(), 0, KEY_WRITE, &mut hKey) != ERROR_SUCCESS {
+        hKey = core::ptr::null_mut();
+    }
+
+    if (*Adapter).NteContext == 0 {
+        DH_DbgPrint!(
+            MID_TRACE,
+            b"DHCPCSVC: Failed to receive a response from a DHCP server\n\0".as_ptr() as *const i8,
         );
-
-        srand(0);
-
-        loop {
-            address_low = rand() as u16;
-            i = 0;
-            while i < (*ip).hw_address.hlen as i32 {
-                address_low += (*ip).hw_address.haddr[i as usize] as u16;
-                i += 1;
-            }
-
-            IpAddress = htonl(0xA9FE0000u32 | address_low as u32);
-
-            BufferSize = core::mem::size_of::<[u32; 20]>() as u32;
-            ret = SendARP(
-                IpAddress,
-                IpAddress,
-                (Buffer.as_mut_ptr()) as *mut c_void,
-                &mut BufferSize,
-            );
-
+        let AltConfig = (*Adapter).AlternateConfiguration;
+        if !AltConfig.is_null() && (*AltConfig).IpAddress != 0 {
+            /* Use the alternate configuration */
             DH_DbgPrint!(
                 MID_TRACE,
-                b"DHCPCSVC: SendARP returned %lu\n\0".as_ptr() as *const i8,
-                ret,
+                b"DHCPCSVC: The alternate configuration will be used.\n\0".as_ptr() as *const i8,
             );
 
-            if ret != 0 {
+            /* IPAddress & SubnetMask */
+            Status = AddIPAddress(
+                htonl((*AltConfig).IpAddress),
+                htonl((*AltConfig).SubnetMask),
+                (*Adapter).IfMib.dwIndex,
+                &mut (*Adapter).NteContext,
+                &mut (*Adapter).NteInstance,
+            );
+            // DIVERGENCE: the C tests `!NT_SUCCESS(Status)`, but AddIPAddress returns a Win32
+            // error (small positive), which NT_SUCCESS reports as success, so the trace could
+            // never fire. Upstream's setup_adapter made the same correction to `!= NO_ERROR`.
+            if Status != NO_ERROR {
+                DH_DbgPrint!(MID_TRACE, b"AddIPAddress: %lx\n\0".as_ptr() as *const i8, Status);
+            }
+
+            /* DefaultGateway */
+            if (*AltConfig).DefaultGateway != 0 {
+                (*Adapter).RouterMib.dwForwardDest = 0; /* Default route */
+                (*Adapter).RouterMib.dwForwardMask = 0;
+                (*Adapter).RouterMib.dwForwardMetric1 = 1;
+                (*Adapter).RouterMib.dwForwardIfIndex = (*Adapter).IfMib.dwIndex;
+
+                if (*Adapter).RouterMib.dwForwardNextHop != 0 {
+                    /* If we set a default route before, delete it before continuing */
+                    DeleteIpForwardEntry(&mut (*Adapter).RouterMib);
+                }
+
+                (*Adapter).RouterMib.dwForwardNextHop = htonl((*AltConfig).DefaultGateway);
+
+                Status = CreateIpForwardEntry(&mut (*Adapter).RouterMib);
+                // Same NT_SUCCESS-on-a-Win32-error correction as above.
+                if Status != NO_ERROR {
+                    DH_DbgPrint!(MID_TRACE, b"CreateIpForwardEntry: %lx\n\0".as_ptr() as *const i8, Status);
+                }
+            }
+
+            if !hKey.is_null() {
+                addr.S_un.S_addr = htonl((*AltConfig).IpAddress);
+                RtlIpv4AddressToStringA(&addr, AddressBuffer.as_mut_ptr());
+                panic_reg_set_sz(hKey, b"DhcpIPAddress\0", AddressBuffer.as_ptr());
+                addr.S_un.S_addr = htonl((*AltConfig).SubnetMask);
+                RtlIpv4AddressToStringA(&addr, AddressBuffer.as_mut_ptr());
+                panic_reg_set_sz(hKey, b"DhcpSubnetMask\0", AddressBuffer.as_ptr());
+                if (*AltConfig).DefaultGateway != 0 {
+                    addr.S_un.S_addr = htonl((*AltConfig).DefaultGateway);
+                    RtlIpv4AddressToStringA(&addr, AddressBuffer.as_mut_ptr());
+                    panic_reg_set_sz(hKey, b"DhcpDefaultGateway\0", AddressBuffer.as_ptr());
+                } else {
+                    RegDeleteValueA(hKey, b"DhcpDefaultGateway\0".as_ptr() as *const i8);
+                }
+                panic_reg_set_sz(hKey, b"DhcpServer\0", Server.as_ptr() as *const i8);
+                RegDeleteValueA(hKey, b"DhcpDomain\0".as_ptr() as *const i8);
+
+                if (*AltConfig).DnsServer1 != 0 {
+                    // "a.b.c.d e.f.g.h": at most 15 + 1 + 15 + NUL = 32 bytes, which is exactly
+                    // AddressBuffer. RtlIpv4AddressToStringA returns the address of the NUL it
+                    // wrote, so the second address is appended there.
+                    addr.S_un.S_addr = htonl((*AltConfig).DnsServer1);
+                    let mut pPtr: *mut i8 = RtlIpv4AddressToStringA(&addr, AddressBuffer.as_mut_ptr());
+                    if (*AltConfig).DnsServer2 != 0 {
+                        *pPtr = b' ' as i8;
+                        pPtr = pPtr.add(1);
+                        addr.S_un.S_addr = htonl((*AltConfig).DnsServer2);
+                        RtlIpv4AddressToStringA(&addr, pPtr);
+                    }
+
+                    panic_reg_set_sz(hKey, b"DhcpNameServer\0", AddressBuffer.as_ptr());
+                } else {
+                    RegDeleteValueA(hKey, b"DhcpNameServer\0".as_ptr() as *const i8);
+                }
+
+                RegDeleteValueA(hKey, b"IPAutoconfigurationAddress\0".as_ptr() as *const i8);
+                RegDeleteValueA(hKey, b"IPAutoconfigurationMask\0".as_ptr() as *const i8);
+
+                panic_reg_set_dword(hKey, b"Lease\0", lease);
+                panic_reg_set_dword(hKey, b"LeaseObtainedTime\0", cur_time as DWORD);
+                panic_reg_set_dword(hKey, b"LeaseTerminatesTime\0", never_time as DWORD);
+                panic_reg_set_dword(hKey, b"T1\0", cur_time as DWORD);
+                panic_reg_set_dword(hKey, b"T2\0", cur_time as DWORD);
+                panic_reg_set_dword(hKey, b"AddressType\0", dwAddressType);
+            }
+        } else {
+            /* Generate an automatic private address */
+            DH_DbgPrint!(
+                MID_TRACE,
+                b"DHCPCSVC: An automatic private address will be assigned.\n\0".as_ptr() as *const i8,
+            );
+
+            /* FIXME: The address generation code sucks */
+            srand(0);
+
+            loop {
+                // C's uint16_t arithmetic wraps; say so (a plain `+=` panics on overflow in a
+                // debug build).
+                address_low = rand() as u16;
+                i = 0;
+                while i < (*ip).hw_address.hlen as i32 {
+                    address_low = address_low.wrapping_add((*ip).hw_address.haddr[i as usize] as u16);
+                    i += 1;
+                }
+
+                IpAddress = htonl(0xA9FE0000u32 | address_low as u32); // 169.254.X.X
+
+                /* Send an ARP request to check if the IP address is already in use */
+                BufferSize = core::mem::size_of::<[u32; 20]>() as u32;
+                ret = SendARP(
+                    IpAddress,
+                    IpAddress,
+                    (Buffer.as_mut_ptr()) as *mut c_void,
+                    &mut BufferSize,
+                );
+
                 DH_DbgPrint!(
                     MID_TRACE,
-                    b"DHCPCSVC: Using automatic private address\n\0".as_ptr() as *const i8,
+                    b"DHCPCSVC: SendARP returned %lu\n\0".as_ptr() as *const i8,
+                    ret,
                 );
-                AddIPAddress(
-                    IpAddress,
-                    htonl(0xFFFF0000u32),
-                    (*Adapter).IfMib.dwIndex,
-                    &mut (*Adapter).NteContext,
-                    &mut (*Adapter).NteInstance,
-                );
-                return;
+
+                if ret != 0 {
+                    /* The IP address is not in use */
+                    DH_DbgPrint!(
+                        MID_TRACE,
+                        b"DHCPCSVC: Using automatic private address\n\0".as_ptr() as *const i8,
+                    );
+                    Status = AddIPAddress(
+                        IpAddress,
+                        htonl(0xFFFF0000u32), // 255.255.0.0
+                        (*Adapter).IfMib.dwIndex,
+                        &mut (*Adapter).NteContext,
+                        &mut (*Adapter).NteInstance,
+                    );
+                    // Same NT_SUCCESS-on-a-Win32-error correction as above.
+                    if Status != NO_ERROR {
+                        DH_DbgPrint!(MID_TRACE, b"AddIPAddress: %lx\n\0".as_ptr() as *const i8, Status);
+                    }
+
+                    if !hKey.is_null() {
+                        addr.S_un.S_addr = IpAddress;
+                        RtlIpv4AddressToStringA(&addr, AddressBuffer.as_mut_ptr());
+                        panic_reg_set_sz(hKey, b"DhcpIPAddress\0", AddressBuffer.as_ptr());
+                        panic_reg_set_sz(hKey, b"DhcpSubnetMask\0", SubnetMask.as_ptr() as *const i8);
+                        panic_reg_set_sz(hKey, b"DhcpServer\0", Server.as_ptr() as *const i8);
+                        RegDeleteValueA(hKey, b"DhcpDefaultGateway\0".as_ptr() as *const i8);
+                        RegDeleteValueA(hKey, b"DhcpDomain\0".as_ptr() as *const i8);
+                        RegDeleteValueA(hKey, b"DhcpNameServer\0".as_ptr() as *const i8);
+
+                        panic_reg_set_sz(hKey, b"IPAutoconfigurationAddress\0", AddressBuffer.as_ptr());
+                        panic_reg_set_sz(hKey, b"IPAutoconfigurationMask\0", SubnetMask.as_ptr() as *const i8);
+
+                        panic_reg_set_dword(hKey, b"Lease\0", lease);
+                        panic_reg_set_dword(hKey, b"LeaseObtainedTime\0", cur_time as DWORD);
+                        panic_reg_set_dword(hKey, b"LeaseTerminatesTime\0", never_time as DWORD);
+                        panic_reg_set_dword(hKey, b"T1\0", cur_time as DWORD);
+                        panic_reg_set_dword(hKey, b"T2\0", cur_time as DWORD);
+                        dwAddressType = 1;
+                        panic_reg_set_dword(hKey, b"AddressType\0", dwAddressType);
+                    }
+
+                    break; // goto done
+                }
             }
         }
+    }
+
+    // done:
+    if !hKey.is_null() {
+        RegCloseKey(hKey);
     }
 }
 
@@ -1568,10 +1756,48 @@ unsafe fn check_option(l: *mut client_lease, option: i32) -> i32 {
     );
 
     match option as u32 {
-        DHO_SUBNET_MASK
-        | DHO_TIME_SERVERS
+        // A subnet mask is exactly one ULONG; setup_adapter relies on it.
+        DHO_SUBNET_MASK => {
+            if (*l).options[option as usize].len != core::mem::size_of::<u32>() as i32 {
+                warning(
+                    "Invalid IP address length in option(%d): %d\0".as_ptr() as *const i8,
+                    option,
+                    (*l).options[option as usize].len,
+                );
+                return 0;
+            }
+            if ipv4addrs(opbuf) == 0 {
+                warning(
+                    "Invalid IP address in option(%d): %s\0".as_ptr() as *const i8,
+                    option,
+                    opbuf,
+                );
+                return 0;
+            }
+            1
+        }
+        // A router list is a whole number of ULONGs.
+        DHO_ROUTERS => {
+            if (*l).options[option as usize].len % core::mem::size_of::<u32>() as i32 != 0 {
+                warning(
+                    "Invalid IP address list length in option(%d): %d\0".as_ptr() as *const i8,
+                    option,
+                    (*l).options[option as usize].len,
+                );
+                return 0;
+            }
+            if ipv4addrs(opbuf) == 0 {
+                warning(
+                    "Invalid IP address in option(%d): %s\0".as_ptr() as *const i8,
+                    option,
+                    opbuf,
+                );
+                return 0;
+            }
+            1
+        }
+        DHO_TIME_SERVERS
         | DHO_NAME_SERVERS
-        | DHO_ROUTERS
         | DHO_DOMAIN_NAME_SERVERS
         | DHO_LOG_SERVERS
         | DHO_COOKIE_SERVERS
@@ -2163,7 +2389,9 @@ unsafe extern "C" fn dhcpoffer(packet: *mut _packet) {
     let mut lp: *mut _client_lease;
     let mut i: i32;
     let mut arp_timeout_needed: i32 = 0;
-    let mut stop_selecting: i32;
+    // time_t, not int: the sum of two time_t values truncated to 32 bits on 64-bit targets.
+    // Upstream-Commit: b3a0868a180
+    let mut stop_selecting: time_t;
     let name: *const i8 = if (*packet).options[DHO_DHCP_MESSAGE_TYPE as usize].len != 0 {
         b"DHCPOFFER\0".as_ptr() as *const i8
     } else {
@@ -2217,13 +2445,13 @@ unsafe extern "C" fn dhcpoffer(packet: *mut _packet) {
         return;
     }
 
-    stop_selecting = ((*(*ip).client).first_sending + (*(*(*ip).client).config).select_interval) as i32;
+    stop_selecting = (*(*ip).client).first_sending + (*(*(*ip).client).config).select_interval;
 
     if (*lease).address.len == (*(*ip).client).requested_address.len && memcmp((*lease).address.iabuf.as_ptr() as *const core::ffi::c_void, (*(*ip).client).requested_address.iabuf.as_ptr() as *const core::ffi::c_void, (*(*ip).client).requested_address.len as usize) == 0 {
         (*lease).next = (*(*ip).client).offered_leases;
         (*(*ip).client).offered_leases = lease;
     } else {
-        if !(*(*ip).client).offered_leases.is_null() && (cur_time + arp_timeout_needed as time_t) > stop_selecting as time_t {
+        if !(*(*ip).client).offered_leases.is_null() && (cur_time + arp_timeout_needed as time_t) > stop_selecting {
             arp_timeout_needed = 0;
         }
 
@@ -2239,14 +2467,14 @@ unsafe extern "C" fn dhcpoffer(packet: *mut _packet) {
         }
     }
 
-    if (stop_selecting as i64) - (cur_time as i64) < (arp_timeout_needed as i64) {
-        stop_selecting = (cur_time as i64 + arp_timeout_needed as i64) as i32;
+    if stop_selecting - cur_time < arp_timeout_needed as time_t {
+        stop_selecting = cur_time + arp_timeout_needed as time_t;
     }
 
     if stop_selecting <= 0 {
         state_selecting(ip as *mut core::ffi::c_void);
     } else {
-        add_timeout((stop_selecting) as time_t, state_selecting, ip as *mut core::ffi::c_void);
+        add_timeout(stop_selecting, state_selecting, ip as *mut core::ffi::c_void);
         cancel_timeout(send_discover, ip as *mut core::ffi::c_void);
     }
 }

@@ -61,21 +61,25 @@ and all shared-file edits stay central. The brief that worked (Sonnet; mmc_new) 
 **RESUME HERE (2026-11-21):** `scan_dead_seh_handlers` is at **0** (235 at the first count) and
 its baseline is empty, so `check` fails on any new dead handler. The last batch (the scattered
 DLLs and user32) is described in `dummy-pseh-verdict.md`. The dead-handler burn-down is done;
-what is left is the owed list below.
+what is left is the owed list below. Done since: DbgPrint's `DBG_PRINTEXCEPTION_C` raise
+is ported, OutputDebugStringA's `!BeingDebugged` bypass is dropped, and shell32 iconcache's
+7 dropped `ERR`/`FIXME` prints are restored (all 2026-11-21).
 
 - **Gate used per batch:** check, check-tooling, `lint --rules rust_ub_deny` ×3, sehprobe ×3,
   vehprobe ×3 and plain smoke ×3. The sehprobe and vehprobe VERDICT lines are in the
   payload's own serial log, not full.log.
-- **Owed:**
-  - `DhcpRequestParams` is a stub: the upstream-sync kept the old dhcpcsvc.idl, so its RPC
-    (and its `nolint(dead_seh)`) wait on that re-port (roadmap, upstream-sync owed list).
-  - DbgPrint's `DBG_PRINTEXCEPTION_C` raise to a user-mode debugger (rtl-diag `debug.rs`).
-    Its arm64 blocker is fixed, so it can be done now.
-  - 7 shell32 `iconcache.rs` dropped `ERR`/`FIXME` rows. They existed before the quest;
-    a `scan_dropped_prints` lexer bug hid them, and fixing it in this batch made them
-    visible. They are baselined.
-  - Whether `OutputDebugStringA` should drop its `!BeingDebugged` DbgPrint bypass, now that
-    the catch is real.
+- **Next (taken over from upstream-sync 2026-11-22, by agreement):** netcfgx's alternate
+  TCP/IP configuration dialog (upstream 7139e57ff89) and the undocumented `ITcpipProperties`
+  interface (c04c092a3e6, afbc9224052), on top of the dhcpcsvc re-port below.
+- **dhcpcsvc upstream re-port (2026-11-22):** the ~20 upstream dhcpcsvc commits since the
+  2026-07-18 translation. Upstream's dhcpcsvc.idl/spec/rosdhcp.h/dhcpcsdk.h are restored
+  (842b5458588 had rolled them back to fit the old Rust); the island is regenerated (now also
+  from dhcpcapi.h); Server_EnableDhcp / AcquireParametersByBroadcast / FallbackRefreshParams /
+  RequestParams and the client DhcpRequestParams, NotifyConfigChangeEx, HandlePnPEvent
+  (SetBinaryClassId), Register/DeRegisterParamChange, UndoRequestParams are ported; dhclient
+  and adapter gain alternate configuration, AddressType and the option checks. Divergences
+  from the C are commented at each site (RPC-supplied option ids bounded, vendor-option walk
+  bounded, leaks on allocation failure, the client calling Server_EnableDhcp directly).
 
 ## Shell extensions (from 2026-10-17)
 
@@ -111,10 +115,10 @@ Owed (tracked, not done):
   tree consensus; cabview's commctrl.h `DPA_DestroyCallback`, declared by nobody in the tree,
   was hand-declared. Promotion is GUID-only now because promoting for functions pulled in
   winreg.h/objbase.h/mmsystem.h for names resolve already handles.
-- **Dropped failure traces.** `FAILED_UNEXPECTEDLY!` is a bare `< 0`; shellutils.h's
-  `_ROS_FAILED_HELPER` also prints in this DBG=1 tree. Same class as the 88 dropped ERR prints;
-  stobject dropped its TRACE/ERR prints too (Volume_FindMixerControl's ERRs among them).
 - Function-local enums are now lowered to `const int` before translation (cabview's case).
+- Closed 2026-11-22: `FAILED_UNEXPECTEDLY!` prints the C's "Unexpected failure (expr)=hr" trace
+  (shellutils.h selects it with `#if 1`, so it ships); one port in win32macros-rust, with
+  shell32's and menuband's copies delegating to it. stobject's dropped prints were already back.
 
 ## rapps (FLIPPED 2026-10-15)
 

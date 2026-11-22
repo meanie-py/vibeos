@@ -1188,6 +1188,7 @@
 @ stdcall SetProcessAffinityMask(long long)
 @ stub -version=0x600+ SetProcessAffinityUpdateMode
 @ stdcall SetProcessDEPPolicy(long)
+@ stdcall AppContainerRegisterSid(ptr wstr wstr)
 @ stdcall SetProcessMitigationPolicy(long ptr long)
 @ stdcall SetProcessPriorityBoost(long long)
 @ stdcall SetProcessShutdownParameters(long long)

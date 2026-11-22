@@ -565,21 +565,83 @@ extends it from the boot spine to every fully-Rust module.
      pulled shell32's monolithic delay object first, and link-guard caught shell32's
      `StrChrA` thunk (shell32 exports the Str* family) winning over shlwapi's own Rust
      `StrChrA`.
+   - **2026-11-21: browseui and rshell converted**, EQUIVALENT ×3.
+     - Their shared `shellbars` (and browseui's `shellfind`) are OBJECT libraries defined
+       in browseui's subdirectories. A sibling OBJECT library is now found by the
+       CMakeLists of the object's own directory, not only the module's, and its sources
+       are read from that directory (rshell's "CBandSite.cpp in no source dir").
+     - `target_link_options(... -Wl,--allow-multiple-definition)` (browseui, `if(LTCG)`)
+       is dropped: every link already carries it.
+     - `add_custom_command(TARGET t POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy
+       $<TARGET_FILE:t> <dest>)` (browseui beside filebrowser.exe, rshell beside
+       explorer.exe and filebrowser.exe) is kept on the cell's custom target, after
+       add_cargo_module defines it, with the cell's output for the file genexes. The copies
+       are sha256-identical to the cell's output.
+   - **2026-11-21: explorer and filebrowser converted**, EQUIVALENT ×3.
+     - Another CMakeLists that names only the output's directory,
+       `$<TARGET_FILE_DIR:t>` (rshell's and browseui's self-copies beside explorer.exe and
+       filebrowser.exe), is rewritten with the cell to `${CMAKE_BINARY_DIR}/<dir>`, where
+       add_cargo_module copies the output (`Cell::dir_refs`). A file that reads the output
+       itself (`$<TARGET_FILE:t>`) is still refused, since it would need the cell's build
+       ordered before it.
+     - **Every cell now links its own objects whole**, a Rust body or not. explorer was
+       DIFFERENT (fewer imports) because its mediabtns.cpp, which nothing references,
+       pulls libwine's debug_ros.c through ros_dbg_log: cmake links it as an object, and
+       the cell's archive dropped both. A shim that duplicates a body symbol is
+       link-guard's "two local definitions" error, never a silent pick. The rule applies
+       to new conversions; committed build.rs files are unchanged.
+   - **2026-11-22: dbghelp, libtirpc and rapps.com converted**, EQUIVALENT ×3. An
+     elseif()/else() branch is no longer refused. It is carried as the negation of the
+     branches before it (`graph::branch_condition`): dbghelp's cell sits under
+     `if(NOT (NOT CMAKE_CROSSCOMPILING))`, beside the untouched host `dbghelphost`
+     branch, and libtirpc's `-w` sits under `if(NOT (MSVC))`. This is plain CMake
+     logic, not a table of conditions assumed constant. rapps.com needed nothing new.
+   - **2026-11-22: libtiff and glu32 converted**, EQUIVALENT ×3.
+     - `remove_target_compile_option` (libtiff, under `if(MSVC)`) is TRANSFERRED onto the
+       OBJECT library with its condition, like `target_compile_options`.
+     - `list(APPEND PCH_SKIP_SOURCE ... ${SOURCE})` (glu32) builds one of the module's
+       own source lists from the other, so it no longer counts as another consumer
+       of `${SOURCE}`.
+     - libtiff links `sdk/lib/crt/libgetopt.a`, a library defined in
+       `sdk/lib/crt/misc/misc.cmake`. The library index reads only CMakeLists.txt, so it is
+       now `engine:c:getopt` in ENGINE_LIBS, with its recipes.
+     - windowscodecs' recipe reorders an include after libtiff's rewrite. Its DLL is
+       sha256-identical with and without it on all 3 arches, as are drwtsn32 and mscoree
+       after dbghelp's rewrite.
+   - **2026-11-22: ufat, ufatx and ucdfs (`nativedll`) converted**, EQUIVALENT ×3. A
+     nativedll is cmake's win32dll link with `--subsystem,native:5.01` and entry DllMain:
+     exports from the .def, default alignment, no image base, no gc. It renders as
+     `ModuleKind::Win32Dll { subsystem: Some("native:5.01") }`, not as a kernel kind.
+     setuplib, the fourth, builds no DLL in this configuration (no cmake output to prove
+     against).
+   - **2026-11-22: svchost converted**, EQUIVALENT ×3. Its cmake link carries no
+     msvcrtex: svchost-rust defines the entry (`wmainCRTStartup`). "exe without a msvcrtex
+     CRT startup" now refuses only when cmake linked an msvcrtex archive the cell did not
+     recognise.
+   - **2026-11-22: win32u and wow64cpu converted**, EQUIVALENT ×3 and on amd64, the only
+     arch cmake builds wow64cpu for. A source `.S` among the module's own objects
+     (win32u's sys-stubs.S, wow64cpu.S) replays like C, since its recipe line is `asm`.
+     Until now only the per-arch objects path took one.
+   - **2026-11-22: wdmaud.drv converted**, EQUIVALENT ×3. Its "two bodies" were the body
+     (`wdmaud_drv_rust`) plus mmixer-rust's user-mode variant, a static library
+     (`engine:crate:mmixer-rust:user:FALSE`). The body's name match missed it because the
+     target is dotted. The match now also takes `<target with . as _>_rust`.
    - **RESUME HERE (2026-11-08, fleet pause).**
-     - *(2026-11-21: the 11-08 batch landed; shdocvw + shlwapi followed, ratchet 29.)*
+     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer, filebrowser, dbghelp, libtirpc, rapps.com, libtiff, glu32, ufat, ufatx, ucdfs, svchost, win32u, wow64cpu and wdmaud.drv followed, ratchet 13.)*
      - The cmake_linked_modules ratchet is at **31**. This week's 24 cells are queued in the
        integrator's combined batch 169+170 on `cells-dotted` 0fa7e73bb5c, which includes
        cells-fusion and cells-exports: the five export holds, fusion ×3, rpcrt4, uniata and
        the 14 dotted targets. First check that 0fa7e73bb5c is an ancestor of origin/master.
        If it bounced, the integrator's message names the gate dir.
      - **Next, by size:**
-       - browseui: `target_link_options`;
-       - explorer and rshell: rshell reads explorer's CBandSite.cpp from no source dir;
        - msvcrt: its custom cargo command shape;
-       - the nativedll kind (4);
-       - the wow64cpu.S / sys-stubs.S asm inputs;
-       - the CRTs, dbghelp/libtirpc (elseif branches) and wdmaud.drv (two bodies).
+       - setuplib (nativedll, not built in this configuration);
+       - the CRTs.
        - Run `tools/codegen cargo-cell <target>` per module for its current refusal.
+     - **Owed (2026-11-21):** audit the committed Rust-body cells against cmake for the
+       explorer class (an unreferenced shim object that cmake loads and the archive
+       drops). pe_equiv proved each at conversion, so a hit would mean a shim was added
+       after its conversion. Re-run `--check` on each body cell to confirm.
      - **Owed:**
        - Audit earlier waves for a cell proven against a stale baseline (see the 11-08
          export-holds entry; the risk is low).

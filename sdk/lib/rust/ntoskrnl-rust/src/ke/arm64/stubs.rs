@@ -1719,6 +1719,16 @@ pub unsafe extern "system" fn KiDispatchException(
                         b"[UEXC-STKBAD] SP=\0".as_ptr() as PCSTR,
                         Context.Sp as ULONG_PTR,
                     );
+                    // Where it died: no user handler will ever see this exception.
+                    ARM64_UART_TRACE_HEX(b"[UEXC-STKBAD] PC=\0".as_ptr() as PCSTR, Context.Pc as ULONG_PTR);
+                    ARM64_UART_TRACE_HEX(b"[UEXC-STKBAD] LR=\0".as_ptr() as PCSTR, Context.__bindgen_anon_1.__bindgen_anon_1.Lr as ULONG_PTR);
+                    ARM64_UART_TRACE_HEX(b"[UEXC-STKBAD] FP=\0".as_ptr() as PCSTR, Context.__bindgen_anon_1.__bindgen_anon_1.Fp as ULONG_PTR);
+                    if (*ExceptionRecord).NumberParameters >= 2 {
+                        ARM64_UART_TRACE_HEX(
+                            b"[UEXC-STKBAD] address=\0".as_ptr() as PCSTR,
+                            (*ExceptionRecord).ExceptionInformation[1] as ULONG_PTR,
+                        );
+                    }
                 }
                 ZwTerminateProcess(NtCurrentProcess(), (*ExceptionRecord).ExceptionCode);
                 KeBugCheckEx(

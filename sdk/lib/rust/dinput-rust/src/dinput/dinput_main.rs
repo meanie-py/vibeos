@@ -1370,7 +1370,7 @@ unsafe extern "system" fn IDirectInput8WImpl_EnumDevicesBySemantics(
     let mut remain: ::core::ffi::c_int = 0;
     let mut didevis: *mut DIDEVICEINSTANCEW = core::ptr::null_mut();
 
-    DPRINT1!(
+    FIXME!(
         "(this=%p,%s,%p,%p,%p,%04x): semi-stub\n",
         This,
         debugstr_w(ptszUserName),
@@ -1391,7 +1391,7 @@ unsafe extern "system" fn IDirectInput8WImpl_EnumDevicesBySemantics(
             j = 0;
             enumSuccess = S_OK;
             while enumSuccess >= 0 {
-                DPRINT1!(
+                TRACE!(
                     " - checking device %u ('%s')\n",
                     i,
                     (*dinput_devices[i as usize]).name

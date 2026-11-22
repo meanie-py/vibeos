@@ -248,6 +248,21 @@ fn command(ctx: &BinaryContext, p: &Path, e: &Entry) -> Vec<String> {
             out.push(format!("-I{}", ctx.build_dir.join(d).display()));
         }
     }
+    if rel.starts_with("boot/freeldr/freeldr") {
+        // all Rust now, so no live freeldr TU to borrow: boot/freeldr/freeldr's CMake
+        // BEFORE the donor's dirs, as its CMake's `include_directories(BEFORE include)`:
+        // freeldr's own debug.h (DBG_DEFAULT_CHANNEL) must shadow sdk/include/reactos's.
+        // The parent dir is for freeldr.h's `<include/ntldr/winldr.h>`.
+        for (i, d) in ["boot/freeldr/freeldr/include", "boot/freeldr/freeldr"]
+            .iter()
+            .enumerate()
+        {
+            out.insert(1 + i, format!("-I{}", ctx.root.join(d).display()));
+        }
+        for d in ["-D_NTHAL_", "-D_BLDR_", "-D_NTSYSTEM_"] {
+            out.push(d.into());
+        }
+    }
     if rel.starts_with("ntoskrnl") {
         for d in [
             "-D_NTOSKRNL_",

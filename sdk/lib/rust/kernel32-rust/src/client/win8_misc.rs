@@ -381,6 +381,16 @@ pub unsafe extern "system" fn SetThreadInformation(
     ThreadInformation: LPVOID,
     ThreadInformationSize: DWORD,
 ) -> BOOL {
+    // ThreadDynamicCodePolicy (2) -> ThreadDynamicCodePolicyInfo (42): a thread opting out
+    // of its process's ACG (ps-rust mitigation.rs). Set only; the kernel has no query.
+    if ThreadInformationClass as u32 == 2 {
+        return set_ntstatus(NtSetInformationThread(
+            hThread,
+            42 as _THREADINFOCLASS,
+            ThreadInformation,
+            ThreadInformationSize,
+        ));
+    }
     match thread_nt_class(ThreadInformationClass as u32) {
         Some(c) => set_ntstatus(NtSetInformationThread(
             hThread,
@@ -388,8 +398,8 @@ pub unsafe extern "system" fn SetThreadInformation(
             ThreadInformation,
             ThreadInformationSize,
         )),
-        // ThreadAbsoluteCpuPriority / ThreadDynamicCodePolicy have no NT mapping (Wine
-        // rejects them too); report that instead of pretending.
+        // ThreadAbsoluteCpuPriority has no NT mapping (Wine rejects it too); report that
+        // instead of pretending.
         None => {
             unmapped_class_error(ThreadInformationClass as u32, ThreadInformationClassMax as u32);
             FALSE

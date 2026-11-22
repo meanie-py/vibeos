@@ -25,3 +25,23 @@ def test_markers_dropped_and_handler_guard_lowered():
 def test_untouched_without_markers():
     src = "fn f() { let x = __TRY_COUNT; }\n"
     assert lower_wine_seh_markers(src) == src
+
+
+def test_a_handler_statement_guards_the_bare_block_after_it():
+    """crypt32 decode.c's CRYPT_AsnDecodeOctetString came back as `__EXCEPT_PAGE_FAULT;` then
+    `{ SetLastError(..); ret = FALSE; }`. Dropping the marker ran the handler every time."""
+    src = (
+        "fn f() -> BOOL {\n"
+        "    {\n        ret = g();\n    }\n"
+        "    __EXCEPT_PAGE_FAULT;\n"
+        "    {\n        SetLastError(STATUS_ACCESS_VIOLATION);\n        ret = FALSE;\n    }\n"
+        "    return ret;\n}\n"
+    )
+    out = lower_wine_seh_markers(src)
+    assert "__EXCEPT" not in out
+    assert "    if _SEH2_Volatile0 != 0 {\n        SetLastError" in out
+
+
+def test_a_handler_statement_before_unbraced_code_stays_loud():
+    src = "fn f() {\n    __EXCEPT_PAGE_FAULT;\n    SetLastError(STATUS_ACCESS_VIOLATION);\n}\n"
+    assert "__EXCEPT_PAGE_FAULT;" in lower_wine_seh_markers(src)

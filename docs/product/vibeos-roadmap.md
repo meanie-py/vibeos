@@ -611,8 +611,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `~/vibeos-flake-farm/fails/auto/20261108-024954-JKt07d-smoke-amd64-bios-HANG_TIMEOUT`.
   Next: a `farm` run of amd64-bios, to get a rate and a second sample.
 
-- **arm64: committed memory faults under concurrent system-process allocation (open,
-  intermittent, found 2026-11-08, upstream-sync lane; owner unassigned, MM).** kmtest
+- **arm64: committed memory faults under concurrent system-process allocation (FIXED
+  2026-11-22, conformance lane: a TEST bug, not MM).** Root cause: `SystemProcessTestWorker`
+  tests the allocation status only in its `while` condition, after the loop body has already
+  run `CheckBufferReadWrite(Base, ...)` on every 10th index expecting success. The
+  allocation that hits `STATUS_COMMITMENT_LIMIT` (0xC000012D, how both workers end) left
+  `Base` NULL, so when it landed on a multiple of 10 the test wrote to and read from NULL:
+  exactly `.c:90`, `.c:76` and `Match = 0` at `.c:93`. All three failing serials show the
+  3 MiB thread ending at "Chunks allocated: 41" or 31 (failed at index 40 or 30); a passing
+  one shows 40 (failed at 39). Which index runs out depends on how the two threads
+  interleave their commit charges, hence the load dependence. It is arm64-only because
+  arm64's commit limit ends that thread inside the 50 checked chunks. The fix checks a
+  failed commit the way `StressTesting` already does, expecting the access violation.
+  Original entry: kmtest
   ZwAllocateVirtualMemory's `SystemProcessTestWorker` runs two system threads that allocate in
   the system process at the same time. One of them got STATUS_SUCCESS committing a chunk, then
   faulted with 0xC0000005 both writing it (`.c:90`) and reading it back (`.c:76`, `Match = 0`
@@ -620,7 +631,21 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   (`/tmp/vibeos-cli/20261108-074334-c9UMvk-conformance-arm64`); the retry passed, and the
   batch (shell32 d3dwine) touches no MM. Seen again in batch 165's gate
   (`/tmp/vibeos-cli/20261108-095623-oBpdmQ-conformance-arm64`, same three lines, passed on
-  retry): 2 of 5 gates. The signature points to a race between concurrent
+  retry): 2 of 5 gates. Third sighting in batch 178's gate (2026-11-21,
+  `/tmp/vibeos-cli/20261121-204507-E0MV1s-conformance-arm64`, same `.c:76/90/93`, passed on
+  retry), preserved at
+  `~/vibeos-flake-farm/fails/auto/20261121-204507-DGwlpE-conformance-arm64-clean-but-ratchet-regression`.
+  That red read only "native controller exited 1" until the runner learned to name the
+  regression from the rounds. **Not reproduced on an idle host (2026-11-21): 0 of 20** runs
+  of the test alone on a fresh boot (`20261121-213950-cpoLef-conformance-arm64`, each fails
+  only the baselined `.c:145/246`), and **0 of 6** full sweeps
+  (`conformance --arch arm64 --repeat 6`, `20261121-214937-c1A6Nr`). Same config as the gate
+  (smp 0, MP kernel); the difference is load: the gate's failing sweep took 105 s against
+  69-89 s idle, because the gate boots three arches at once. A 6-round soak beside a
+  live gate (`20261121-221311-moK2xM`, load average 24.6 falling to 7.6) was also clean, but
+  only its first round (125 s) ran under gate-like load: 0 of 32 samples overall. So it is
+  timing-dependent; the next repro is a soak under SUSTAINED host load (run the arm64 repeat beside the other arches'
+  sweeps), then a tripwire on the commit/fault path. The signature points to a race between concurrent
   commits in one process (PTE or page-table population, or the VAD), not to address-space
   layout. It is unrelated to 56755a2a231 (kernel32's user-mode sort-table mapping). Next:
   `farm --arches arm64` on the conformance payload to get a rate, then a tripwire on that
@@ -673,7 +698,8 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `CreateThread` had returned, so the likelier stall is the final `SetServiceStatus(RUNNING)`
   or the SCM's handling of it: expect checkpoint 3. Not seen in QEMU (arm64 probe: RUNNING
   after 1 s). 2026-11-21: seven more `pi5 boot`s of one image (`20261121-171521-CbZh5c` through
-  `20261121-174647-oTgu0G`) all had PlugPlay RUNNING within 1 s, so the rate so far is 1 in 9.
+  `20261121-174647-oTgu0G`), and eight more that evening (`20261121-193315-9JgnTk` through
+  `20261121-202832-mKfexG`), all had PlugPlay RUNNING within 1 s, so the rate so far is 1 in 17.
   sysfbprobe prints the checkpoint (state 4 checkpoint 0 on those boots); the next stall names
   where it stopped.
 
@@ -699,25 +725,71 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   since, and the console build has not been re-run. Next: stage the console build beside them
   to tell "console only" from "gone".
 
-- **amd64 Chrome payload: a Chrome thread sits Ready for 5-20 s without running (open, found
-  2026-11-07, graviton lane; parked 2026-11-08).** Seen as the sweep's hang sampler
-  (`tools/payloads/stackdump.h`) stalling in `GetThreadContext` on a Chrome thread. That stall
-  can no longer hang the payload: probes have a 20 s deadline and resume a target they left
-  suspended (landed `108be580165`); every sweep since reaches `done`. The flush the thread
-  was first seen in was a coincidence (`flushprobe`: flushes are fast and flat). What is
-  measured: at the deadline the target is **Ready** (ThreadState 1) with no CPU time accrued
-  and a handful of context switches; kernel-side, the context APC is queued and deliverable
-  (`KernelApcPending=1`, APCs not disabled, WaitIrql 0) on a thread whose NextProcessor is 0,
-  at priority 5-7, so it is not being picked to run. Unexplained: why a Ready thread on CPU 0
-  waits seconds (starvation behind busier threads until the balance manager's 300-tick boost,
-  or a ready-list/summary inconsistency). Separately, multi-process Chrome trips the §9.56
-  `[RQ5A]` drain-insert guard a few times per boot (none in the 29 single-process boots before
-  2026-11-06): always a `KiSetPriorityThread` Ready-branch requeue (stamp 9002) at priority 14,
-  the ERESOURCE owner boost, with the thread's stale links forming a short ring that reaches no
-  PRCB list head. One boot stalled with no RQ5A at all, so RQ5A is not the stall's cause; it may
-  be a false positive of the guard on stale union links. Diagnostics parked on branch
-  `graviton-diag-ctxwait` (`74f086b0488`). Next: see the RESUME HERE in
-  `docs/engineering/active-lanes/graviton-spike-plan.md`.
+- **amd64 Chrome payload: a Chrome thread sits Ready for 5-20 s without running (EXPLAINED
+  2026-11-21, graviton lane: CPU saturation on the smoke's one vCPU, not a scheduler bug).**
+  Seen as the sweep's hang sampler (`tools/payloads/stackdump.h`) stalling in
+  `GetThreadContext` on a Chrome thread; probes have a 20 s deadline and resume a target they
+  left suspended (`108be580165`), so it no longer hangs the payload. The smoke boots ONE vCPU
+  unless `--smp N` is passed, so the November "Ready on CPU 0" evidence was the only CPU. A
+  `[STARVE]` print at every balance-set starvation boost (TEMP branch `graviton-diag-ctxwait`
+  @ `a09f763602a`; run 20261121-180654-HgHYdp, 3/3 payloads pass) shows 200-270 boosts per
+  boot: priority 6-7 Chrome threads Ready for 304-363 ticks while the CPU runs priority 8-13
+  threads of the boot's companion apps (`gui64.exe`/`win64.exe` x64 guests, `osk.exe`,
+  `magnify.exe`, `taskmgr.exe` under WOW64), then rescued by the 300-tick boost as on Windows.
+  The probe's own helper thread starves the same way, which is why a probe could time out
+  after the kernel's context wait had already completed. Measured since by the sweep's
+  end-of-run CPU table: osk.exe 27% of the boot (two thirds kernel), magnify.exe 19% (all
+  kernel), idle ~2%; the stalled boots' CPU sat in win32k.sys `DIB_DoRop` (resolved from the
+  new `[MODBASE]` lines). On that load 3 of 8 Chrome boots missed the sweep's deadline. The
+  Chrome payload now boots QUIET (`quiet: true`; winlogon skips its test ladder): 3/3 pass,
+  40 min against 93-98, no starvation boosts (run 20261122-044146-4XMySS). Why osk and
+  magnify are that busy (`idlewatch` payload, untouched desktop): both are timer-driven by
+  design. osk's dialog thread wakes 37/s at ~4 ms a wake (x86 frames: blocked in
+  `NtUserGetMessage` under `DialogBoxParamW` in 7 of 8 samples), magnify's 55/s at 3-4 ms of
+  kernel blitting; software GDI under TCG makes each tick cost milliseconds. Not a
+  correctness bug. Part of osk's load was a WOW64 gap, fixed 2026-11-22: every guest
+  `WM_COPYDATA` send failed ("divergent lParam payload ... no marshaller", 61 in two idle
+  minutes, taskmgr's 2 s refresh); with the send-path marshaller osk's CPU fell from 144 s to
+  89 s over a comparable boot and idle rose from 276 s to 364 s. Separately,
+  multi-process Chrome trips the §9.56 `[RQ5A]` drain-insert guard a few times per boot, always
+  a `KiSetPriorityThread` Ready-branch requeue (stamp 9002) at priority 14 (the ERESOURCE owner
+  boost) whose stale links form a short ring reaching no PRCB list head (2026-11-21: 2 hits in 1 of
+  3 one-vCPU boots, 0 in 3 four-vCPU boots). Still owed to smp-bringup: settle whether that guard is a false positive on
+  stale union links. Under `--smp 4` the payload wedged on a different bug, fixed below.
+
+- **Chrome payload: the sweep never finishes after a Chrome hang; dhcpcsvc ApiCriticalSection
+  deadlock (open, found 2026-11-22, graviton lane).** Chrome's Run M sometimes leaves a
+  thread stuck on a critical section (`[CENSUS] STUCK chrome.exe ... WrKeyedEvent`); before
+  2026-11-22 the sweep's 420 s timeout dumped it, killed the tree and went on (runs
+  qsFxNa, E1HUIJ: 49 sightings each, sweep `done`). Since kernel32 loads kernelbase.dll
+  (`9e9ad9261f8`), 2 of 3 one-vCPU `--no-net` boots with that hang then raised
+  `STATUS_POSSIBLE_DEADLOCK` about 20 times (RtlpWaitForCriticalSection timing out on
+  `dhcpcsvc_rust::dhcp::api::ApiCriticalSection`, in a process that outlives Chrome) and
+  the sweep stopped after killing Chrome (runs 20261122-080847-vtJV0Y,
+  20261122-110401-oILhqO). Observed: the correlation and the lock. Inferred, unproven: that
+  kernelbase's presence changes what Chrome calls, and that dhcpcsvc's dispatch thread,
+  which holds ApiLock while it runs DHCP timeouts (as upstream does), blocks inside it while
+  DHCP retries with no network. With the network on, the same media passed 3/3 with no
+  deadlock raise (run 20261122-120932-HrBSDJ), so it needs `--no-net`.
+
+- **netstack: BUGCHECK 0xA writing a TCP receive into an unmapped buffer (open, found
+  2026-11-22, graviton lane).** One Chrome payload boot (`--no-net`, one vCPU; run
+  20261122-094733-aQAAcc) in about twenty that day: `memcpy` at DISPATCH_LEVEL writing
+  `fffff8807406815c` (Param1), from smoltcp `tcp::Socket::recv_slice` called by
+  netstack-rust `tditrans.rs` `bridge` (the legacy receive-IRP path, `buf` captured when
+  the IRP was queued), with afd.sys `DisconnectComplete` on the same stack. Suspected: a
+  queued receive whose buffer AFD released on disconnect is still filled by the bridge.
+  Resolve driver frames with `vibeos-cli sym --serial <log> netstack.sys+0x...`.
+
+- **amd64 `-smp 4` Chrome payload: a CPU spins forever releasing a thread's ApcQueueLock
+  (FIXED 2026-11-21, graviton lane).** 3 of 3 boots wedged right after chrome.exe spawned
+  (run 20261121-190024-EhsfzY; desktop boots passed): one CPU in
+  `KiReleaseApcLockFromSynchLevel`'s wait-for-successor loop, three halted. iomgr's
+  stranded-completion check took `KTHREAD.ApcQueueLock`, a queued lock, with a plain
+  `SpinLockGuard`; on SMP the two protocols corrupt each other. Fixed in `iomgr-rust`
+  `irp.rs`; new source rule `scan_queued_lock_plain_acquire`. Verified: 3/3 `-smp 4` Chrome
+  payloads reach `done` (run 20261121-221337-UwSqhY, 36 min against 158). Field manual: "One
+  lock word, two protocols".
 
 - **OptiPlex 9020: freeldr reset the board after loading the boot drivers (FIXED 2026-11-08,
   graviton lane).** Every netboot reset to coreboot ~165 ms after `[FLDR] phase: boot drivers
@@ -751,7 +823,9 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
     ejects) still REMOVEs a node's children before its siblings are asked, so a veto there
     leaves part of the subtree torn down.
   - `CONFIGFLAG_DISABLED` honoured at boot is not yet proven by a reboot test.
-  - `SetupDiSetClassInstallParamsA` is still a stub (as in Wine/upstream).
+  - `SetupDiSetClassInstallParamsA` and `SetupDiGetClassInstallParamsA/W` were stubs (as in
+    Wine/upstream); implemented 2026-11-21, and sysfbprobe's root enable now goes through the
+    A entry point with a W readback (amd64 `20261121-202950-RndahK`, i386 `20261121-203902-TYmBQB`).
   - Failed-start root devices now stay in the tree with their problem code (Windows
     behaviour), instead of vanishing.
 
@@ -766,17 +840,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   turns it into a livelock. Any real resume from sleep would hit it, so the power manager's
   sleep query does not send Windows' cancelling `SET_POWER(S0)` until this is fixed.
 
-- **`SetPixel` on the display surface writes black (open, found 2026-11-07, amd64).** On a
-  `CreateDC("DISPLAY")` DC, `GetPixel` reads the real colours (wallpaper `0xa56e3a`, taskbar
-  `0xc8d0d4`) and `SetPixel` returns the colour it was given, but the pixel then reads back
-  `0x000000`, and stays black after a restore. A 1x1 `PatBlt` with a solid brush round-trips
-  correctly on the same DC. Seen in `tools/payloads/sysfbprobe` runs (`20261107-182550-reYxfy`).
-  Not the display driver: suspect win32k's SetPixel colour translation to the device format.
+- **`SetPixel` on the display surface wrote black (FIXED 2026-11-08 by ccacb417164, verified
+  2026-11-22; found 2026-11-07, amd64).** `SetPixel` lends its colour to the DC's text brush
+  and clears `DIRTY_TEXT` so the blit keeps it. But `DC_vPrepareDCsForBlit` tested an invented
+  `0x08` (`DIRTY_BACKGROUND`) for text, so a DC with a dirty background re-realized the text
+  brush, black, over it. sysfbprobe now round-trips a `SetPixel` on a `CreateDC("DISPLAY")` DC
+  at every screen check, and passes (`20261122-125149-qUYyoT-smoke-amd64`).
 
-- **`SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_ALLCLASSES | DIGCF_PRESENT)` fails with
-  error 31 (open, found 2026-11-07, amd64).** Seen once from the Startup folder, before the
-  PlugPlay service was running, so it may only be that ordering; the CM_* calls failed the
-  same way until the probe waited for the service. Not rechecked with the service up.
+- **`SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_ALLCLASSES | DIGCF_PRESENT)` failed with
+  error 31 (NOT REPRODUCED with PlugPlay up, 2026-11-22; found 2026-11-07, amd64).** It was
+  seen once, from the Startup folder, before the PlugPlay service was running. sysfbprobe now
+  makes the call after waiting for the service and gets 40 present devices
+  (`20261122-125149-qUYyoT-smoke-amd64`). Whether Windows also fails the call before its
+  PnP service is up is unchecked.
 
 - **Fibers did not work on amd64 or arm64 (FIXED 2026-11-06, upstream-sync lane).** Both
   routines a fiber switch needs were unimplemented on 64-bit: amd64's `fiber.S` was an
@@ -822,15 +898,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   held or a create path waits instead of failing; the stack is ks-rust / portcls / ac97.
   Repro: `dsound_probe.exe ks` from `tools/payloads/modrun/probes/dsound.c` (no suite case
   runs it). Artifact: `/tmp/vibeos-cli/20261105-204803-oonv142k-smoke-amd64`.
-- **Running out of memory while creating an image section BUGCHECKs 0x1E instead of failing
-  the load (open, found 2026-11-05).** At the default 512M, the first modrun process to load
-  Mesa's 18 MB `libgallium_wgl.dll` (the d3d8 `device` case) died with an uncaught
-  `STATUS_NO_MEMORY` (0xC0000017) raised in kernel mode; the raise logger's frames name
-  `PeFmtCreateSection`, `MiAllocatePagesForMdl` and `NtReadFile`, but they are stack-scanned and
-  the reported raise site is not a call, so the raising frame is unconfirmed. Windows fails the
-  `NtCreateSection`/`LdrLoadDll` with the status. Repro: drop `vm_memory: 1536M` from
-  `tools/payloads/modrun/payload.yaml`, `MODRUN_SUITES=d3d8`, boot amd64. Artifact:
-  `/tmp/vibeos-cli/20261105-195149-61405khw-smoke-amd64`. modrun now boots with 1.5G.
+- **Running out of memory while loading Mesa BUGCHECKed 0x1E (FIXED by 2026-11-22; found
+  2026-11-05). What remains is a stall: at 512M the guest runs out of physical pages and waits
+  instead of failing the allocation (open).** On 2026-11-05 the first modrun process to load
+  Mesa's 18 MB `libgallium_wgl.dll` (the d3d8 `device` case, default 512M) died on an
+  uncaught `STATUS_NO_MEMORY`. Re-run 2026-11-22 on the same recipe (drop `vm_memory: 1536M`
+  from `tools/payloads/modrun/payload.yaml`, `MODRUN_SUITES=d3d8`, boot amd64): 32 kernel
+  raises of 0xC0000017, every one caught and none bugchecked. They come from `CcMapData`
+  (`cc-rust/src/pin.rs:312`) under cdfs's `CdMapPathTableBlock` ← `CdLookupPathEntry` ←
+  `CdFindPathEntry`, and cdfs's dispatch `try_except` handles them. The likely fix is the
+  2026-11-06 SEH quest batch 2 (6cea71b5e6c), which restored the dead raise-class handlers,
+  `FsRtlCopyRead`'s among them. That is inferred: the November 5 binary, and with it the
+  original raise path, is gone. **Still open:** with `[MM] ... avail 0`, the C d3d8 process
+  never finishes and one thread sits in `WrFreePage` until the 50-minute harness timeout.
+  The live CD has no pagefile, and Windows would refuse the commit (`STATUS_COMMITMENT_LIMIT`)
+  long before physical pages ran out. This belongs with "MM: reserving charges no commit for
+  page tables" (commit accounting). Artifact: `/tmp/vibeos-cli/20261122-112536-sYri3V-smoke-amd64`.
+  modrun keeps 1.5G.
 - **The modrun grader could lose a case's single `[MODRUN] exit` line (FIXED 2026-11-08: `modrun.c` now sends it twice).**
   The smoke failed `d3d8.logic: rust: never finished (no exit line)`, but QEMU's serial log for
   the same run has the line intact (`[MODRUN] exit d3d8.logic rust rc=0x00000000 ms=690
@@ -979,16 +1063,23 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   fastfat's `FatCommonCreateCallout` has the C's try/except (still unreachable below
   WINTHRESHOLD). Known left as-is: fastfat's oplock stand-ins (`FsRtlOplockBreakH`
   SUCCESS, `FsRtlCheckOplockEx` ignoring Flags: ntoskrnl stubs them at 0xA00+),
-  `KeAcquireSpinLockRaiseToDpc` in `rust_cohab_fat.c` (raises IRQL, takes no lock: UP-only),
   cdfs's `FsRtlIsLeadDbcsCharacter` stand-in (always FALSE, DBCS OEM code pages),
   `RtlOemStringToCountedUnicodeSize` (Length*2, SBCS-only), and the lost file/line in
-  `FatBugCheck`/`CdBugCheck` parameter 1.
+  `FatBugCheck`/`CdBugCheck` parameter 1. Fixed 2026-11-22: `rust_cohab_fat.c`'s
+  `KeAcquireSpinLockRaiseToDpc` stand-in took no lock, and on amd64 and arm64 the DDK's
+  KeAcquireSpinLock macro routed every fastfat spinlock through it, so none excluded another
+  CPU. It is now i386-only and calls the HAL's `KfAcquireSpinLock`.
 - **amd64 STATUS_NONEXISTENT_SECTOR in-page error, 0x1E during the boot WoW64 self-tests
   (open flake, seen once 2026-11-01, research).** hostapps `20261101-123017-7ue7skcb`:
   `[MM] Failed to page data in! st=c0000015 off=10000` while `apc32.exe` created threads,
   then BUGCHECK 0x1E (0xC0000006). The rerun of the same media was clean
   (`20261101-123345-09ibq5oq`), as were five hostapps runs after it. First boot on the new
-  XFS volume; most likely the CD through uniata. Not reproduced.
+  XFS volume; most likely the CD through uniata. Not reproduced. Overnight soak 2026-11-22
+  (`farm --arches amd64 --minutes 480 --polite`, run `20261122-002255-hmEvEu`): 180/180 boots
+  clean on master `b895e8fddbf`'s amd64 media. The farm-report corpus is 230 amd64 boots, 0
+  failures. Those boots used the plain smoke payload, which runs the same boot WoW64
+  self-tests but not hostapps. The failing run was a hostapps boot, so this lowers the
+  estimated rate without proving it gone.
 - **arm64 kmtest ZwAllocateVirtualMemory: its two system threads now finish in the other order
   (open question, found 2026-10-19, research; benign for the ratchet).** The pass count moved
   576/579/582 on the version-flip + handle-biasing branch, where master reads 581. Thread 1's
@@ -997,19 +1088,18 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   at 29-54, below `COMMIT_CHECKED_CHUNKS` (3 passes per checked chunk). The arm64 floor is 570,
   the most that race can cost (`a5f44ee4fcd`, header note). Why the order flipped is NOT
   explained; a scheduling change from the NT 10.0 client-scheduler move is the first suspect.
-- **i386 under `SPECIALPOOL=*` bugchecks `0x0F` SPIN_LOCK_ALREADY_OWNED in boot (open, found
-  2026-10-19, research).** Every allocation routed to special pool; i386 stops right after
-  `IopInitializeSystemDrivers` / `PiEnumerateDevice HTREE\ROOT\0`. Parameter 1 is lock
-  `0x80741810` (`ntoskrnl.exe+0x286810`, which the symbolizer puts inside kdbg-rust's
-  `KdbStack`, so an unnamed lock in .data next to it). Then a second `0x1E` (0xC0000028), and the
-  `[DBLFAULT]` EBP walk recurses through `_SehExceptHandler`/`RemoveFromWsList`, which looks
-  like the fault handler re-entering, not the original fault. amd64 and arm64 boot to the
-  desktop with the same tripwire. NOT handle biasing: the branch's pre-biasing tree
-  (`f759caa734a` + the self-test fix) fails identically, the same lock address included
-  (`20261031-221917-yzvuu66y` base, `20261031-221917-vxinhkgd` branch), and neither the NT 10.0
-  flip: master `a319085fd99` plus only that self-test fix fails the same way, same lock
-  (`20261031-225210-_q82pnkv`). No i386 `SPECIALPOOL=*` run existed before these; until
-  `74ba9bd59e4` the boot self-test failed every `*` run first, so this has been latent on master.
+- **i386 under `SPECIALPOOL=*` bugchecked `0x0F` SPIN_LOCK_ALREADY_OWNED in boot (FIXED
+  2026-11-21, research; found 2026-10-19).** `MmDeleteSectionAssociation` freed its rmap entry
+  under the PFN lock. rmap.c releases the lock first, but the Rust's lock-guard conversion had
+  kept it until return. A lookaside spill goes to `MmFreeSpecialPool`, which takes the PFN lock
+  itself. The `[DBLFAULT]` stack that pointed at cdfs came from a second 0x0F raised while
+  unwinding the first. i386 `KeBugCheckEx` now walks the caller's EBP chain for bugchecks
+  without a trap frame, and that walk showed the real path. A tree-wide scan found one more of
+  the class: MmAccessFault waited at APC_LEVEL. `scan_guard_drop_late` now gates it. Also
+  fixed: `SPECIALPOOL=*` on amd64 and arm64 had panicked in classpnp since `78bbf7aae1a`,
+  because special pool ignored the device-extension cache alignment; it is now sized so the
+  extension lands aligned. All three arches reach the desktop under `SPECIALPOOL=*` (amd64
+  `20261121-231032-gbO7DV`, arm64 `20261121-231558-zGbeTn`, i386 `20261121-232125-cN2TdS`).
 - **i386 double fault `0x7F/8` after netstack comes up (FIXED 2026-10-18, upstream-sync; was
   ~7% of i386 boots).** A kernel stack overflow, not the emulator: 1/20 on QEMU 11.0.50 and 2/20
   on 11.1.0 from the same media. netstack's `engine::worker` reserves a 7.3 KB frame (0x1c80) of
@@ -2378,7 +2468,7 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   inactive adapters, serial's PnP queries, comctl32 TB_SETMETRICS, dhcpcsvc RegCloseKey,
   kbd103 generated. Already ours: TrimWsList's flush, NtRemoveIoCompletion's zeroed status,
   AmILastThread on ActiveThreads, the fiber checks. Then translated sealed on Haiku and integrated ($0.10): DeviceProperty (`pnpprop.c` -> ntoskrnl-rust pnpmgr/pnpprop.rs, plus its hooks: the property-change event, interface keys, release on IopDeleteDevice, kernel-mode Rtl locale table) and x86/x64 cache enumeration (`cacheinfo.c` -> ke/x86x64, with both KiGetCacheInformation rewritten onto it; amd64 cpu.rs had Intel/AMD swapped against ketypes.h since 0e95a343b33). Storport re-ported over its old crate with `rustconv port` (owner's call, 2026-10-16; all 8 TUs incl. upstream's new `ioctl.c`/`srb.c`, plus inline.h; $0.25 Haiku, 0/0/0 from a $0 `port replay`). Done since (2026-10-16): IoGet/SetDeviceInterfacePropertyData exported from pnpprop.rs, and ntoskrnl_vista's NOT_IMPLEMENTED copies removed so drivers import them (upstream's copies forward through MmGetSystemRoutineAddress for kernels without them, 3cc9aa99292; ours always has them; cdrom's extern was cdecl), with upstream's `IoDeviceProperty` kmtest added to the sweep (653/0 on all three arches); shell32's RegenerateUserEnvironment ported (c25e4fd7dec; its apitest 8/0 on amd64). Then (2026-10-17, owner approved the re-buy) mmc_new's views (c0f01460800, 857f521a704) and CActionWnd.cpp (88da81d9b8b): 37 functions re-bought on Haiku ($0.34), the rest replayed from banks; the stale banks fixed by hand, CActionWnd on the module's own ATL window machinery, and five list-slot casts, a swapped icon-mode pair and two C bugs (a never-set selected node, a VARIANT leak) fixed after review. Owed, by cluster (upstream-sync): pciidex rewrite
-  (~15K lines), PCIX arbiters/ECAM, netcfgx and dhcpcsvc alternate configuration, dhcpcsvc RequestParams (the sync kept the old IDL, so `DhcpRequestParams` is a Rust stub returning 0 with no RPC behind it), freeldr
+  (~15K lines), PCIX arbiters/ECAM, netcfgx alternate configuration (dhcpcsvc half done 2026-11-22: upstream IDL restored, RequestParams/EnableDhcp/FallbackRefresh/alternate config ported; netcfgx's dialog and ITcpipProperties are cpp-cluster's next), freeldr
   disk registration and boot menu, the Wine 10 ole32/oleaut32/mlang/crypt syncs, msgina and
   syssetup branding. **The msgina branding commit (6ae2d5ab43f) deleted IDI_ROSLOGO/IDI_BAR,
   so every logon, status and shutdown dialog shows no banner today: visible, on the boot
@@ -3805,8 +3895,11 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   them**, so `vibeos-cli check` covers them continuously and the staticlib never sees their
   symbols. Deliberately not invented inside the change repairing the incident.
 
-- **`vibeos-cli conformance` exits 0 on media that launched ZERO tests. UNOWNED**
-  (2026-09-19). Verified in an artifact: `launched: 0`, `sweep_rc: 1`, and every baseline row
+- **`vibeos-cli conformance` exits 0 on media that launched ZERO tests. FIXED 2026-11-21
+  (conformance lane):** a hand run now fails by default on any regression, bad launch or
+  kernel assertion, and a zero-launch sweep reports every row as "never launched", which is
+  a regression. `--report-only` restores exit 0 but records verdict WARN. Original report
+  (2026-09-19): Verified in an artifact: `launched: 0`, `sweep_rc: 1`, and every baseline row
   reported as the literal string **`in baseline (OK) but never launched`**. A test that never
   ran is scored **OK**, so zero launches means zero regressions means
   `ratchet holds: no regressions vs baseline`, exit 0. Two guards exist and neither covers

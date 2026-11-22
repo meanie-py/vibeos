@@ -53,6 +53,14 @@ binaries:
     dest: bin/flushprobe/flushprobe.exe
   - src: tools/payloads/chrome/gdiprobe-i386.exe
     dest: bin/gdiprobe/gdiprobe32.exe
+  - src: tools/payloads/chrome/tokprobe-{arch}.exe
+    dest: bin/tokprobe/tokprobe.exe
+  - src: tools/payloads/chrome/acgprobe-{arch}.exe
+    dest: bin/acgprobe/acgprobe.exe
+  - src: tools/payloads/chrome/paintprobe-{arch}.exe
+    dest: bin/paintprobe/paintprobe.exe
+  - src: tools/payloads/chrome/paintprobe-i386.exe
+    dest: bin/paintprobe/paintprobe32.exe
   - src: tools/payloads/chrome/w32start-bare.exe
     dest: bin/w32start/w32start-bare.exe
   - src: tools/payloads/chrome/w32start-crt.exe
@@ -75,3 +83,7 @@ test:
   launch_drain_secs: 3600
   # Chrome's browser + renderer + utility processes want far more than the 512M default.
   vm_memory: 4G
+  # Skip winlogon's test ladder: its stock i386 applets stay up all boot and on the one vCPU
+  # osk and magnify took most of it (blitting in win32k DIB_DoRop), so Chrome's later steps
+  # sometimes missed the sweep's deadline (3 of 8 boots, 2026-11-21/22).
+  quiet: true

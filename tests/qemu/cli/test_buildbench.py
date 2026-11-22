@@ -279,7 +279,9 @@ p.wait()
         while time.monotonic() < deadline:
             try:
                 state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
-            except FileNotFoundError:
+            except (FileNotFoundError, ProcessLookupError):
+                # A process reaped while its stat file is being read fails the read
+                # with ESRCH rather than ENOENT.
                 break
             if state == "Z":
                 break
@@ -327,7 +329,8 @@ def _fixture_alive(identity):
     try:
         fields = Path(f"/proc/{identity['pid']}/stat").read_text().rsplit(")", 1)[1].split()
         return fields[19] == identity["start_ticks"] and fields[0] not in ("Z", "X")
-    except FileNotFoundError:
+    # A process reaped between the open and the read raises ESRCH, not ENOENT.
+    except (FileNotFoundError, ProcessLookupError):
         return False
 
 

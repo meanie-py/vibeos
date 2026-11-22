@@ -10,6 +10,7 @@
 
 #include <FEXCore/Config/Config.h>
 #include <FEXCore/Core/CodeCache.h>
+#include <FEXCore/Utils/AllocatorHooks.h>
 #include <FEXCore/Core/Context.h>
 #include <FEXCore/Core/CoreState.h>
 #include <FEXCore/Core/HostFeatures.h>
@@ -46,6 +47,7 @@
 #include <Common/Module.h>
 #include <Common/OvercommitTracker.h>
 #include <Common/PortabilityInfo.h>
+#include <Common/UniprocessorTSO.h>
 
 static std::unique_ptr<FEX::Windows::OvercommitTracker> OvercommitTracker;
 #endif
@@ -193,7 +195,14 @@ static bool RelocateMappedImage(HMODULE Module) {
   }
 
   const auto BaseAddress = reinterpret_cast<uintptr_t>(Module);
-  const auto PreferredBase = NtHeaders->OptionalHeader.ImageBase;
+  // VIBEOS PATCH (x64 cache generator): ImageBase by the image's own optional header.
+  // ArchImageNtHeaders is the 32-bit layout outside ARM64EC, where a PE32+ ImageBase is a
+  // 64-bit field at another offset: msvcrt's read as 0x7FF, every relocation went in with a
+  // garbage delta, and the caches compiled from those images were of corrupted code.
+  const uint64_t PreferredBase =
+    NtHeaders->OptionalHeader.Magic == IMAGE_NT_OPTIONAL_HDR64_MAGIC ?
+      reinterpret_cast<const IMAGE_NT_HEADERS64*>(NtHeaders)->OptionalHeader.ImageBase :
+      NtHeaders->OptionalHeader.ImageBase;
   const auto Delta = static_cast<intptr_t>(BaseAddress - PreferredBase);
 
   // Wine will automatically relocate all DLLs to their mapped address, but PE relocations must still be applied so
@@ -287,13 +296,19 @@ static void* MapView(HANDLE SectionHandle) {
   SIZE_T ViewSize = 0;
   LARGE_INTEGER Offset {};
 
+#ifdef VIBEOS_X64_GUEST
+  // VIBEOS PATCH (x64 cache generator): a 64-bit guest image may sit anywhere.
+  const ULONG_PTR ZeroBits = 0;
+#else
   // Map images in the lower 32-bits for WOW64 so relocations can be correctly applied
   const ULONG_PTR ZeroBits = 0x7fffffff;
+#endif
 
   NTSTATUS Status =
     NtMapViewOfSection(SectionHandle, GetCurrentProcess(), &BaseAddress, ZeroBits, 0, &Offset, &ViewSize, ViewShare, 0, PAGE_EXECUTE_READ);
 
   if (Status < 0) {
+    LogMan::Msg::EFmt("NtMapViewOfSection: {:#x}", static_cast<uint32_t>(Status)); // VIBEOS PATCH (cache generator)
     return nullptr;
   }
 
@@ -305,18 +320,25 @@ static void* MapView(HANDLE SectionHandle) {
 static std::optional<uint64_t> TryMapImage(FEX::Windows::InvalidationTracker& InvalidationTracker, FEX::Windows::ImageTracker& ImageTracker,
                                            const FEXCore::CodeMapFileId& ID, FEXCore::ExecutableFileInfo& Info) {
   {
-    FEX::Windows::ScopedHandle File {CreateFileA(Info.Filename.c_str(), GENERIC_READ | SYNCHRONIZE, FILE_SHARE_READ | FILE_SHARE_DELETE,
-                                                 nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr)};
+    // VIBEOS PATCH (cache generator): GENERIC_EXECUTE too. An image section with
+    // PAGE_EXECUTE_READ needs FILE_EXECUTE on the file (MmMakeFileAccess, as on Windows,
+    // where LoadLibrary opens images for execute): read-only, every image was ERROR_ACCESS_DENIED.
+    FEX::Windows::ScopedHandle File {CreateFileA(Info.Filename.c_str(), GENERIC_READ | GENERIC_EXECUTE | SYNCHRONIZE,
+                                                 FILE_SHARE_READ | FILE_SHARE_DELETE, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr)};
     if (!File) {
       LogMan::Msg::EFmt("Couldn't find image: {}", Info.Filename);
       return std::nullopt;
     }
 
-    FEX::Windows::ScopedHandle Section {CreateFileMappingA(*File, nullptr, SEC_IMAGE | PAGE_EXECUTE_READ, 0, 0, nullptr)};
-    if (!Section) {
-      LogMan::Msg::EFmt("Couldn't create section for image: {}", Info.Filename);
+    // VIBEOS PATCH (cache generator): CreateFileMapping reports failure as NULL, which a
+    // ScopedHandle (empty only at INVALID_HANDLE_VALUE) took for a handle, so the failure
+    // surfaced one call later as NtMapViewOfSection's STATUS_INVALID_HANDLE.
+    HANDLE SectionHandle = CreateFileMappingA(*File, nullptr, SEC_IMAGE | PAGE_EXECUTE_READ, 0, 0, nullptr);
+    if (!SectionHandle) {
+      LogMan::Msg::EFmt("Couldn't create section for image: {} (error {})", Info.Filename, GetLastError());
       return std::nullopt;
     }
+    FEX::Windows::ScopedHandle Section {SectionHandle};
 
     void* Mapping = MapView(*Section);
     if (!Mapping) {
@@ -376,6 +398,25 @@ static LONG ExceptionHandler(_EXCEPTION_POINTERS* ExceptionInfo) {
 #endif
       return EXCEPTION_CONTINUE_EXECUTION;
     }
+#if !defined(ARCHITECTURE_arm64ec)
+    // VIBEOS PATCH (cache generator): say where an unhandled fault came from, since the crash
+    // report names only the faulting function (a memcpy in ntdll, called from who knows
+    // where). Walks the frame-record chain: [fp] = caller's fp, [fp+8] = return address.
+    fmt::print("[E] access violation at {:#x} (address {:#x}), lr {:#x}; frames:\n", Context->Pc, FaultAddress, Context->Lr);
+    auto Fp = static_cast<uint64_t>(Context->Fp);
+    for (int i = 0; i < 24 && Fp && !(Fp & 7); i++) {
+      MEMORY_BASIC_INFORMATION Info;
+      if (!VirtualQuery(reinterpret_cast<void*>(Fp), &Info, sizeof(Info)) || Info.State != MEM_COMMIT) {
+        break;
+      }
+      const auto* Record = reinterpret_cast<const uint64_t*>(Fp);
+      void* Base = nullptr;
+      RtlPcToFileHeader(reinterpret_cast<void*>(Record[1]), &Base);
+      fmt::print("[E]   {:#x} (module {:#x} + {:#x})\n", Record[1], reinterpret_cast<uint64_t>(Base),
+                 Record[1] - reinterpret_cast<uint64_t>(Base));
+      Fp = Record[0];
+    }
+#endif
   }
   return EXCEPTION_CONTINUE_SEARCH;
 }
@@ -385,9 +426,36 @@ struct winsize {
 };
 #endif
 
+#ifdef _WIN32
+// VIBEOS PATCH (cache generator): code maps name each binary as the CPU layer saw it mapped,
+// an NT device path (MemoryMappedFilenameInformation: "\device\ramdisk{...}\reactos\...",
+// lower-cased by ImageTracker), which neither CreateFile nor a file stream opens. Rewrite the
+// device prefix to the drive letter whose QueryDosDevice target it is.
+static fextl::string OpenablePath(const fextl::string& Path) {
+  if (Path.size() < 2 || Path[0] != '\\' || Path[1] == '\\') {
+    return Path; // already a drive or UNC path
+  }
+  char Target[MAX_PATH];
+  for (char Letter = 'A'; Letter <= 'Z'; Letter++) {
+    const char Drive[3] = {Letter, ':', 0};
+    if (!QueryDosDeviceA(Drive, Target, sizeof(Target))) {
+      continue;
+    }
+    const size_t Length = strlen(Target);
+    if (Path.size() > Length && Path[Length] == '\\' && !_strnicmp(Path.c_str(), Target, Length)) {
+      return fextl::string {Drive} + Path.substr(Length);
+    }
+  }
+  return Path;
+}
+#endif
+
 // Returns filename of generated cache on success
 static std::optional<std::string> GenerateSingleCache(FEXCore::ExecutableFileInfo& Binary, uint64_t CodeCacheConfigId,
                                                       fextl::set<uintptr_t> BlockList, std::string_view OutDir) {
+#ifdef _WIN32
+  Binary.Filename = OpenablePath(Binary.Filename); // VIBEOS PATCH (cache generator)
+#endif
 #ifndef _WIN32
   ELFCodeLoader Loader(Binary.Filename.c_str(), -1, "", fextl::vector<fextl::string> {Binary.Filename.c_str()},
                        fextl::vector<fextl::string> {}, nullptr, nullptr, true /* skip interpreter */);
@@ -396,7 +464,9 @@ static std::optional<std::string> GenerateSingleCache(FEXCore::ExecutableFileInf
     return std::nullopt;
   }
   const bool Is64Bit = Loader.Is64BitMode();
-#elif defined(_M_ARM64EC)
+#elif defined(_M_ARM64EC) || defined(VIBEOS_X64_GUEST)
+  // VIBEOS PATCH (x64 cache generator): VIBEOS_X64_GUEST builds this tool for vibeos's x64-guest
+  // CPU layer (tools/fex/wowx64fex), which runs 64-bit guest code in a native arm64 process.
   const bool Is64Bit = true;
 #else
   const bool Is64Bit = false;
@@ -410,7 +480,13 @@ static std::optional<std::string> GenerateSingleCache(FEXCore::ExecutableFileInf
   const auto NtDll = GetModuleHandle("ntdll.dll");
   const bool IsWine = !!GetProcAddress(NtDll, "wine_get_version");
   auto HostFeatures = FEX::Windows::CPUFeatures::FetchHostFeatures(
+#ifdef VIBEOS_X64_GUEST
+    // VIBEOS PATCH (x64 cache generator): the host type wowx64fex runs its guests with, so cached
+    // code is what that layer would compile (Arm64ec would add CHPE's `int 0x81`).
+    IsWine, FEXCore::HostFeatures::HostTypeEnum::Wow64);
+#else
     IsWine, Is64Bit ? FEXCore::HostFeatures::HostTypeEnum::Arm64ec : FEXCore::HostFeatures::HostTypeEnum::Wow64);
+#endif
 #endif
 
   auto CTX = FEXCore::Context::Context::CreateNewContext(HostFeatures);
@@ -418,8 +494,25 @@ static std::optional<std::string> GenerateSingleCache(FEXCore::ExecutableFileInf
 
 #ifdef _WIN32
   OvercommitTracker = std::make_unique<FEX::Windows::OvercommitTracker>(IsWine);
+  // VIBEOS PATCH (cache generator): commit on touch, as the CPU layers do. Caching gives each
+  // context a 128 MB code buffer, committed up front, one per binary: the eighth exhausted
+  // vibeos's commit limit, came back null (the assert is compiled out) and the compile copied
+  // its code to address 0. The tracker is replaced per binary, and the ranges with it.
+  if (!IsWine) {
+    FEXCore::Allocator::LazyCommitTrack = [](void* Base, size_t Size, bool Mark) {
+      if (Mark) {
+        OvercommitTracker->MarkRange(reinterpret_cast<uint64_t>(Base), Size);
+      } else {
+        OvercommitTracker->UnmarkRange(reinterpret_cast<uint64_t>(Base), Size);
+      }
+    };
+  }
 
-  auto SyscallOSABI = Is64Bit ? FEXCore::HLE::SyscallOSABI::OS_LINUX64 : FEXCore::HLE::SyscallOSABI::OS_LINUX32;
+  // VIBEOS PATCH (cache config): the syscall ABI the Windows CPU layers run with. Under a Linux
+  // ABI a compiled `syscall` stores the handler's return value into RAX; the Windows layers'
+  // handlers write the guest's NTSTATUS into the context themselves and return 0, so cached
+  // code saw every syscall succeed (an NtQueryDirectoryFile loop never ended).
+  auto SyscallOSABI = FEXCore::HLE::SyscallOSABI::OS_GENERIC;
   auto SyscallHandler = std::make_unique<AOTSyscallHandler>(*CTX, SyscallOSABI);
 
   SyscallHandler->VAFileStart =
@@ -429,7 +522,9 @@ static std::optional<std::string> GenerateSingleCache(FEXCore::ExecutableFileInf
   }
 
   // Register exception handler for OvercommitTracker
-  AddVectoredExceptionHandler(1, ExceptionHandler);
+  // VIBEOS PATCH (cache generator): once per process, not once per binary ProcessAll generates.
+  static const auto Registered = AddVectoredExceptionHandler(1, ExceptionHandler);
+  (void)Registered;
 #else
   Loader.CalculateHWCaps(CTX.get());
 
@@ -604,9 +699,18 @@ static int GenerateCache(int argc, const char** argv) {
   std::filesystem::create_directories(OutDir);
 
   const auto PortableInfo = FEX::ReadPortabilityInformation();
-  char* envp[] = {nullptr};
   FEXCore::Config::Shutdown();
+#ifdef _WIN32
+  // VIBEOS PATCH (cache config): a cache is valid only for the configuration that compiled it, and
+  // its header checks FEX's version alone (the config id is always 0), so generate with the
+  // configuration the CPU layers run with: this boot's tripwire FEX options, and TSO emulation
+  // off on a uniprocessor (Common/UniprocessorTSO.h, which both layers call the same way).
+  FEX::Config::LoadConfig("", FEX::Windows::EnvironmentWithTripwireOptions(_environ), PortableInfo);
+  FEX::Windows::DisableTSOOnUniprocessor();
+#else
+  char* envp[] = {nullptr};
   FEX::Config::LoadConfig("", envp, PortableInfo);
+#endif
 
   auto NumBlocks = Data.at(ProgramName).size();
   auto GeneratedCache = GenerateSingleCache(ProgramName, 0 /* TODO: Config id */, Data.at(ProgramName), OutDir);
@@ -683,8 +787,14 @@ static std::map<FEXCore::CodeMapFileId, ParsedContentsAndDependencies> ImportPen
       continue;
     }
 
-    fmt::print("Importing new code map {}\n", Name);
     std::ifstream Incoming(Entry.path(), std::ios_base::binary);
+    if (!Incoming) {
+      // VIBEOS PATCH (cache generator): a running process holds its code map open, unshared,
+      // until it exits; leave the map for the next run instead of parsing an empty stream.
+      fmt::print("Skipping code map {} (still being written)\n", Name);
+      continue;
+    }
+    fmt::print("Importing new code map {}\n", Name);
     std::set<FEXCore::CodeMapFileId> Dependencies;
     std::optional<FEXCore::CodeMapFileId> ExecutableFileId;
     for (auto& [FileId, Contents] : FEXCore::CodeMap::ParseCodeMap(Incoming)) {
@@ -707,7 +817,8 @@ static std::map<FEXCore::CodeMapFileId, ParsedContentsAndDependencies> ImportPen
 
     // Delete imported code map
     Incoming.close();
-    std::filesystem::remove(Entry.path());
+    std::error_code RemoveError; // VIBEOS PATCH (cache generator): never throw here
+    std::filesystem::remove(Entry.path(), RemoveError);
   }
 
   return Result;
@@ -749,6 +860,25 @@ static void AggregateCodeMaps(const std::string& NewCodeMapDirectory, const std:
   }
 }
 
+#ifdef VIBEOS_X64_GUEST
+// Whether the PE file at Path is an x86-64 image (IMAGE_FILE_MACHINE_AMD64), from its headers.
+static bool IsAmd64Image(const fextl::string& Path) {
+  std::ifstream File(Path.c_str(), std::ios_base::binary);
+  IMAGE_DOS_HEADER Dos {};
+  if (!File.read(reinterpret_cast<char*>(&Dos), sizeof(Dos)) || Dos.e_magic != IMAGE_DOS_SIGNATURE) {
+    return false;
+  }
+  DWORD Signature = 0;
+  IMAGE_FILE_HEADER Header {};
+  File.seekg(Dos.e_lfanew);
+  if (!File.read(reinterpret_cast<char*>(&Signature), sizeof(Signature)) || Signature != IMAGE_NT_SIGNATURE ||
+      !File.read(reinterpret_cast<char*>(&Header), sizeof(Header))) {
+    return false;
+  }
+  return Header.Machine == IMAGE_FILE_MACHINE_AMD64;
+}
+#endif
+
 static int ProcessAll() {
   const auto CacheDirectory = FEX::Config::GetCacheDirectory();
   const std::string NewCodeMapDirectory = fmt::format("{}codemap/new", CacheDirectory);
@@ -762,6 +892,41 @@ static int ProcessAll() {
   fextl::string OutDir = CacheDirectory + "cache/";
   std::filesystem::create_directories(OutDir);
 
+#ifdef VIBEOS_X64_GUEST
+  // VIBEOS PATCH (x64 cache generator): one cache per x86-64 binary with merged blocks, not
+  // per executable. Upstream walks executables and generates their dependencies, but a code
+  // map names an executable only once a block of its own was compiled, so most arrive
+  // nameless and took their DLLs with them; and the cache is machine-wide on vibeos, so a
+  // DLL's blocks are worth caching whichever program ran them. The x86 CPU layer writes its
+  // maps here too: those binaries are not x86-64 and are left alone.
+  for (auto& Entry : std::filesystem::directory_iterator(ReadyCodeMapDirectory)) {
+    std::ifstream CodeMap(Entry.path(), std::ios_base::binary);
+    for (auto& [FileId, Contents] : FEXCore::CodeMap::ParseCodeMap(CodeMap)) {
+      if (Contents.Blocks.empty() || Contents.Filename.empty()) {
+        continue;
+      }
+      const FEXCore::ExecutableFileInfo File {nullptr, FileId, Contents.Filename};
+      const auto BinaryName = FEXCore::CodeMap::GetBaseFilename(File, false);
+      if (!IsAmd64Image(OpenablePath(Contents.Filename))) {
+        continue;
+      }
+      const auto CacheFilename = fmt::format("{}{}-{:016x}", OutDir, BinaryName, 0);
+      std::error_code ec;
+      const auto MapTime = std::filesystem::last_write_time(Entry.path(), ec);
+      if (!ec && std::filesystem::last_write_time(CacheFilename, ec) > MapTime && !ec) {
+        fmt::println("Cache up to date: {}", BinaryName);
+        continue;
+      }
+      const auto FileIdArg = fmt::format("{:016x}", FileId);
+      const auto MapPath = Entry.path().string();
+      std::vector<const char*> GenerateArgs {"generate", "--fileid", FileIdArg.c_str(), "--outdir", OutDir.c_str(), MapPath.c_str()};
+      if (GenerateCache(GenerateArgs.size(), GenerateArgs.data()) != 0) {
+        fmt::println("ERROR: Cache generation failed for {}", BinaryName);
+      }
+    }
+  }
+  return 0;
+#endif
   // Iterate over all executables (.exe).
   // These determine the emulator configuration to use when compiling dependencies.
   for (auto& Entry : std::filesystem::directory_iterator(ReadyCodeMapDirectory)) {
@@ -818,12 +983,16 @@ static int ProcessAll() {
 }
 
 int main(int argc, char** argv) {
-#ifndef _WIN32
+  // VIBEOS PATCH (cache generator logging): this tool's own stdout handlers on Windows too.
+  // FEX::Windows::Logging::Init reads SilentLog before any config is loaded, from a null meta
+  // layer: the tool died at start with an access violation in MetaLayer::GetConv, printing
+  // nothing. And its log goes to a file under %LOCALAPPDATA% (or Wine's debug channel), where
+  // a caller capturing this tool's output (appstorm) never sees it.
   LogMan::Throw::InstallHandler(AssertHandler);
   LogMan::Msg::InstallHandler(MsgHandler);
-#else
-  FEX::Windows::Logging::Init();
-#endif
+  // Unbuffered, so a caller reading a pipe sees progress as it happens rather than at exit.
+  setvbuf(stdout, nullptr, _IONBF, 0);
+  setvbuf(stderr, nullptr, _IONBF, 0);
 
   std::vector<const char*> Args {argv + 1, argv + argc};
   auto CommandName = std::string {basename(argv[0])} + " " + (argc > 1 ? argv[1] : "");

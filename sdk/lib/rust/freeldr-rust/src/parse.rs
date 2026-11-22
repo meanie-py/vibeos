@@ -27,7 +27,7 @@ pub unsafe extern "C" fn IniParseFile(IniFileData: PCHAR, IniFileSize: ULONG) ->
     TRACE!("IniParseFile() IniFileSize: %d\n", IniFileSize);
 
     if IniFileSectionInitialized == 0 {
-        InitializeListHead(&mut IniFileSectionListHead);
+        InitializeListHead(&raw mut IniFileSectionListHead);
         IniFileSectionInitialized = 1u8;
     }
 
@@ -77,7 +77,7 @@ pub unsafe extern "C" fn IniParseFile(IniFileData: PCHAR, IniFileSize: ULONG) ->
             InitializeListHead(&mut (*CurrentSection).SectionItemList);
 
             IniFileSectionCount += 1;
-            InsertTailList(&mut IniFileSectionListHead, &mut (*CurrentSection).ListEntry);
+            InsertTailList(&raw mut IniFileSectionListHead, &mut (*CurrentSection).ListEntry);
 
             CurrentLineNumber += 1;
             continue;

@@ -171,7 +171,7 @@ pub unsafe fn pend(irp: PIRP) -> bool {
 // --------------------------------------------------------------------------- #
 
 pub enum Cmd {
-    CreateAddr { id: u64, port: u16 },
+    CreateAddr { id: u64, ip: [u8; 4], port: u16 },
     CreateConn { id: u64, conn_ctx: usize },
     SetEvent { addr_id: u64, ev_type: u32, handler: usize, context: usize },
     Associate { conn_id: u64, addr_id: u64 },
@@ -357,7 +357,9 @@ fn drain_into(out: &mut Vec<Cmd>) {
 
 struct Addr {
     id: u64,
-    /// Local UDP port (0 = let the stack pick an ephemeral on first use).
+    /// The IP the caller bound (0.0.0.0 = any), as getsockname reports it.
+    local_ip: [u8; 4],
+    /// Local port. Never 0: a bind to port 0 is given an ephemeral port at creation.
     local_port: u16,
     /// Lazily-created bound UDP socket for the connectionless datagram path.
     udp: Option<SocketHandle>,
@@ -493,9 +495,15 @@ pub fn pump(iface: &mut Interface, sockets: &mut SocketSet<'static>, state: &mut
 
 fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, state: &mut TdiState) {
     match cmd {
-        Cmd::CreateAddr { id, port } => {
+        Cmd::CreateAddr { id, ip, port } => {
+            // Windows picks the ephemeral port at bind(), so getsockname reports it and a
+            // listen on the socket works. Choosing it later (first send, or never for a
+            // listener) left gpg-agent's 127.0.0.1:0 listener reporting port 0, so libassuan
+            // wrote port 0 to the socket file and no client could reach the agent.
+            let port = if port != 0 { port } else { ephemeral_port(state, id) };
             state.addrs.push(Addr {
                 id,
+                local_ip: ip,
                 local_port: port,
                 udp: None,
                 ev_recv: None,
@@ -611,16 +619,19 @@ fn apply(cmd: Cmd, iface: &mut Interface, sockets: &mut SocketSet<'static>, stat
             }
         }
         Cmd::QueryAddress { id, irp, out, out_len } => {
-            // A connection object reports its socket's local endpoint; an address
-            // object reports its bound port + the interface IP. ids are unique
-            // across both tables (single allocator), so a lookup miss is benign.
+            // A connection object reports its socket's local endpoint, or before it has
+            // one, the address object it is associated with. An address object reports
+            // what was bound, as Windows' getsockname does: 127.0.0.1 for a loopback bind
+            // and 0.0.0.0 for a wildcard one, with the port picked at bind time. ids are
+            // unique across both tables (single allocator), so a lookup miss is benign.
+            let bound = |aid: u64| state.addrs.iter().find(|a| a.id == aid).map(|a| (a.local_ip, a.local_port));
             let (ip, port) = if let Some(c) = state.conns.iter().find(|c| c.id == id) {
                 match c.handle.and_then(|h| sockets.get::<tcp::Socket>(h).local_endpoint()) {
                     Some(e) => (ip_octets(e.addr, iface), e.port),
-                    None => (iface_ipv4(iface), 0),
+                    None => bound(c.addr_id).unwrap_or((iface_ipv4(iface), 0)),
                 }
-            } else if let Some(a) = state.addrs.iter().find(|a| a.id == id) {
-                (iface_ipv4(iface), a.local_port)
+            } else if let Some(a) = bound(id) {
+                a
             } else {
                 (iface_ipv4(iface), 0)
             };
@@ -946,6 +957,19 @@ unsafe fn complete_ping_timeout(p: &PendingPing) {
     if written.is_some() {
         complete(p.irp, STATUS_TIMEOUT, reply_sz);
     }
+}
+
+/// An ephemeral port (49152-65535) that no address object or listen backlog holds, starting
+/// from one derived from the address id so successive binds spread out.
+fn ephemeral_port(state: &TdiState, id: u64) -> u16 {
+    let base = (id & 0x3fff) as u16;
+    (0..0x4000u16)
+        .map(|i| 49152 + (base.wrapping_add(i) & 0x3fff))
+        .find(|&p| {
+            !state.addrs.iter().any(|a| a.local_port == p)
+                && !state.listen_ports.iter().any(|lp| lp.port == p)
+        })
+        .unwrap_or(49152 + base)
 }
 
 /// Lazily create + bind the UDP socket backing an address object (connectionless

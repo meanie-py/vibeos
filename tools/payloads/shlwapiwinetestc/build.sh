@@ -19,12 +19,4 @@ EXE="$ROOT/build-$A/modules/rostests/winetests/shlwapi/shlwapi_winetest.exe"
   || { echo "[shlwapiwinetestc] ninja failed; fix: ./vibeos-cli build --arch $A --winetests shlwapi" >&2; exit 1; }
 [ -f "$EXE" ] || { echo "[shlwapiwinetestc] $EXE still missing after ninja" >&2; exit 1; }
 cp "$ROOT/build-$A/dll/win32/shlwapi/shlwapi_c.dll" "$HERE/shlwapi_c-$A.dll"
-python3 - "$EXE" "$HERE/shlwapi_winetest_c-$A.exe" <<'PY'
-import re, sys
-data = open(sys.argv[1], "rb").read()
-hits = len(re.findall(rb"(?i)shlwapi\.dll", data))
-if hits == 0:
-    sys.exit("[shlwapiwinetestc] no shlwapi.dll string to rename; the oracle would test the Rust")
-open(sys.argv[2], "wb").write(re.sub(rb"(?i)shlwapi\.dll", b"shlwapc.dll", data))
-print(f"[shlwapiwinetestc] renamed {hits} shlwapi.dll string(s)")
-PY
+python3 "$ROOT/tools/payloads/rename_module_refs.py" "$EXE" "$HERE/shlwapi_winetest_c-$A.exe" shlwapi shlwapc

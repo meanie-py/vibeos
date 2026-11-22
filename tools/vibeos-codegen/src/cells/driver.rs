@@ -127,6 +127,30 @@ fn plan_cells(root: &Path, cells: &[Cell], whole_wave: bool) -> Result<ApplyPlan
             edits.insert(cmake.clone(), new_cmake);
             report.push(cmake);
         }
+        // `$<TARGET_FILE_DIR:t>` elsewhere (rshell's copy beside explorer.exe): the cell's
+        // output is copied to its own binary dir, which this names without a genex.
+        let bin = cell
+            .cmake_dir
+            .strip_prefix(root)
+            .unwrap_or(&cell.cmake_dir)
+            .to_string_lossy()
+            .into_owned();
+        for f in &cell.dir_refs {
+            let path = root.join(f);
+            local(root, &path)?;
+            let text = match edits.get(&path) {
+                Some(x) => x.clone(),
+                None => read(&path)?,
+            };
+            let new = text.replace(
+                &format!("$<TARGET_FILE_DIR:{}>", cell.target),
+                &format!("${{CMAKE_BINARY_DIR}}/{bin}"),
+            );
+            if new != text {
+                edits.insert(path.clone(), new);
+                report.push(path);
+            }
+        }
         created_crates.push(dest.clone());
         report.extend([dest, ws.clone()]);
     }

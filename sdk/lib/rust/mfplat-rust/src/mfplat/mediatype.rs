@@ -6757,7 +6757,7 @@ pub unsafe extern "system" fn MFInitAMMediaTypeFromMFMediaType(
 ) -> HRESULT {
     let mut hr: HRESULT = 0;
 
-    DPRINT1!("%p, %s, %p.\n", media_type, debugstr_mf_guid(core::ptr::addr_of!(format)), am_type);
+    TRACE!("%p, %s, %p.\n", media_type, debugstr_mf_guid(core::ptr::addr_of!(format)), am_type);
 
     memset(am_type as *mut core::ffi::c_void, 0, core::mem::size_of::<AM_MEDIA_TYPE>() as size_t);
     (*am_type).formattype = format;
@@ -6785,7 +6785,7 @@ pub unsafe extern "system" fn MFInitAMMediaTypeFromMFMediaType(
         } else if IsEqualGUID!(core::ptr::addr_of!((*am_type).majortype), core::ptr::addr_of!(MFMediaType_Video)) {
             hr = init_am_media_type_video_format(am_type, media_type);
         } else {
-            DPRINT1!("Not implemented!\n");
+            FIXME!("Not implemented!\n");
             hr = E_NOTIMPL;
         }
     }

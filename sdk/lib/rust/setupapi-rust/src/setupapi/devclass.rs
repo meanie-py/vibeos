@@ -765,8 +765,9 @@ pub unsafe extern "system" fn SetupDiGetClassInstallParamsA(
     ClassInstallParamsSize: DWORD,
     RequiredSize: PDWORD,
 ) -> BOOL {
-    // FIXME("SetupDiGetClassInstallParamsA(%p %p %p %lu %p) Stub\n", DeviceInfoSet, DeviceInfoData, ClassInstallParams, ClassInstallParamsSize, RequiredSize);
-    (FALSE as i32)
+    // Every parameter block the W side can hold (InstallParamsData: DIF_PROPERTYCHANGE,
+    // DIF_ADDPROPERTYPAGE_ADVANCED) is free of text, so the A and W layouts are the same.
+    SetupDiGetClassInstallParamsW(DeviceInfoSet, DeviceInfoData, ClassInstallParams, ClassInstallParamsSize, RequiredSize)
 }
 
 #[no_mangle]
@@ -777,8 +778,82 @@ pub unsafe extern "system" fn SetupDiGetClassInstallParamsW(
     ClassInstallParamsSize: DWORD,
     RequiredSize: PDWORD,
 ) -> BOOL {
-    // FIXME("SetupDiGetClassInstallParamsW(%p %p %p %lu %p) Stub\n", DeviceInfoSet, DeviceInfoData, ClassInstallParams, ClassInstallParamsSize, RequiredSize);
-    (FALSE as i32)
+    // Upstream and Wine leave this a FIXME returning FALSE, without even setting an error, so
+    // nothing could read back what SetupDiSetClassInstallParams stored. It reads the same
+    // per-function slots SetupDiSetClassInstallParamsW fills through InstallParamsData: on the
+    // device when DeviceInfoData is given, else on the set. Divergence: Windows returns the
+    // block of the LAST function set; the slots do not record which that was, so when more
+    // than one is held the table's order decides (property change first). Set clears neither
+    // slot when it sets the other, but devmgr sets one, calls the installer and clears it.
+    let mut ret: BOOL = FALSE as BOOL;
+    'done: {
+        if DeviceInfoSet.is_null() {
+            SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+            break 'done;
+        }
+        if DeviceInfoSet == (INVALID_HANDLE_VALUE as HDEVINFO)
+            || (*(DeviceInfoSet as *mut DeviceInfoSet)).magic != SETUP_DEVICE_INFO_SET_MAGIC as DWORD
+        {
+            SetLastError(ERROR_INVALID_HANDLE as DWORD);
+            break 'done;
+        }
+        if !DeviceInfoData.is_null()
+            && (*DeviceInfoData).cbSize as usize != core::mem::size_of::<SP_DEVINFO_DATA>()
+        {
+            SetLastError(ERROR_INVALID_USER_BUFFER as DWORD);
+            break 'done;
+        }
+        if ClassInstallParams.is_null() && ClassInstallParamsSize != 0 {
+            SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+            break 'done;
+        }
+        if !ClassInstallParams.is_null()
+            && ((ClassInstallParamsSize as usize) < core::mem::size_of::<SP_CLASSINSTALL_HEADER>()
+                || (*ClassInstallParams).cbSize as usize != core::mem::size_of::<SP_CLASSINSTALL_HEADER>())
+        {
+            SetLastError(ERROR_INVALID_USER_BUFFER as DWORD);
+            break 'done;
+        }
+
+        let mut InstallParams: SP_DEVINSTALL_PARAMS_W = core::mem::zeroed();
+        InstallParams.cbSize = core::mem::size_of::<SP_DEVINSTALL_PARAMS_W>() as DWORD;
+        if SetupDiGetDeviceInstallParamsW(DeviceInfoSet, DeviceInfoData, core::ptr::addr_of_mut!(InstallParams)) == 0 {
+            break 'done;
+        }
+        if InstallParams.Flags & (DI_CLASSINSTALLPARAMS as DWORD) == 0 {
+            SetLastError(ERROR_NO_CLASSINSTALL_PARAMS as DWORD);
+            break 'done;
+        }
+
+        let slots: *mut ClassInstallParams = if DeviceInfoData.is_null() {
+            &raw mut (*(DeviceInfoSet as *mut DeviceInfoSet)).ClassInstallParams
+        } else {
+            &raw mut (*((*DeviceInfoData).Reserved as *mut DeviceInfo)).ClassInstallParams
+        };
+        let table = &*core::ptr::addr_of!(InstallParamsData);
+        for entry in table.iter() {
+            let held = *((slots as *mut u8).offset(entry.FieldOffset as isize) as *mut PSP_CLASSINSTALL_HEADER);
+            if held.is_null() {
+                continue;
+            }
+            if !RequiredSize.is_null() {
+                *RequiredSize = entry.ParamsSize as DWORD;
+            }
+            if ClassInstallParams.is_null() || ClassInstallParamsSize < entry.ParamsSize as DWORD {
+                SetLastError(ERROR_INSUFFICIENT_BUFFER as DWORD);
+                break 'done;
+            }
+            memcpy(
+                ClassInstallParams as *mut core::ffi::c_void,
+                held as *const core::ffi::c_void,
+                entry.ParamsSize as usize,
+            );
+            ret = TRUE as BOOL;
+            break 'done;
+        }
+        SetLastError(ERROR_NO_CLASSINSTALL_PARAMS as DWORD);
+    }
+    ret
 }
 
 #[no_mangle]
@@ -874,7 +949,7 @@ pub unsafe extern "system" fn SetupDiInstallClassExW(
 ) -> BOOL {
     let mut ret: BOOL = (FALSE as i32);
 
-    DPRINT1!(
+    TRACE!(
         "%p %s 0x%lx %p %s %p %p\n",
         hwndParent,
         debugstr_w(InfFileName),
@@ -886,10 +961,10 @@ pub unsafe extern "system" fn SetupDiInstallClassExW(
     );
 
     if InfFileName.is_null() {
-        DPRINT1!("Case not implemented: InfFileName NULL\n");
+        FIXME!("Case not implemented: InfFileName NULL\n");
         SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     } else if (Flags & !(DI_NOVCP | DI_NOBROWSE | DI_FORCECOPY | DI_QUIETINSTALL)) != 0 {
-        DPRINT1!(
+        TRACE!(
             "Unknown flags: 0x%08lx\n",
             Flags & !(DI_NOVCP | DI_NOBROWSE | DI_FORCECOPY | DI_QUIETINSTALL)
         );
@@ -1047,7 +1122,7 @@ pub unsafe extern "system" fn SetupDiInstallClassExW(
         SetupTermDefaultQueueCallback(callback_context);
     }
 
-    DPRINT1!("Returning %d\n", ret);
+    TRACE!("Returning %d\n", ret);
     return ret;
 }
 

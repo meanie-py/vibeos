@@ -294,20 +294,25 @@ What already landed, which the plan below predates:
   amd64/arm64 had no protection at all (only i386 has fault labels): a pop racing a free read a
   freed entry and faulted; it now retries when the header moved, and arm64 does the guarded read
   outside its LDAXP/STLXP window. `rtl-strings` guards only under `kernel`: the boot loader and the
-  host difftest link no SEH trampoline. Not ported: DbgPrint's `DBG_PRINTEXCEPTION_C` raise to a
-  user-mode debugger; its arm64 blocker (`RtlRaiseException` resuming a continued exception
-  inside itself) was fixed 2026-11-08, so it is owed, not blocked.
+  host difftest link no SEH trampoline. DbgPrint's `DBG_PRINTEXCEPTION_C` raise to a user-mode
+  debugger was ported 2026-11-21, once the arm64 `RtlRaiseException` resume bug (fixed
+  2026-11-08) stopped blocking it: a debugger that handles the raise takes the string, and one
+  that passes it on lands in our catch and the print falls through to DebugPrint.
 - The lint's function parser missed generic helpers whose bounds hold `->`
-  (`fn f<F: FnOnce() -> T>`); fixed in `twins.rs`. Caveat: a call to ANY catching function
-  credits the caller, so making a callee catch can clear its caller's row falsely —
-  `LdrpCheckForLoadedDll` cleared that way when `RtlImageNtHeaderEx` gained its catch, and was
-  then given its own.
+  (`fn f<F: FnOnce() -> T>`); fixed in `twins.rs`. A call to a catching function credits the
+  caller, which once let a callee's new catch clear its caller's row falsely
+  (`LdrpCheckForLoadedDll`, when `RtlImageNtHeaderEx` gained its catch). Since 2026-11-21 an
+  exported API that ports a C function no longer counts as a helper; only crate-internal or
+  Rust-only catchers do.
 - 2026-11-08, kernel32, all 44 rows: the `lstr*` family (a bad pointer gives 0 / NULL, which
   apps rely on), `Global*`/`LocalUnlock` (a wild handle is caught with the heap lock held and
   the lock is released), the console read/write family (`ERROR_INVALID_ACCESS` on a bad
   caller buffer), `LoadLibraryExW`, `GetModuleFileNameW`, `FindClose` on a garbage handle,
   `DeviceIoControl`, the APC dispatcher, and `OutputDebugStringA`, whose
-  `DBG_PRINTEXCEPTION_C` killed the process when a debugger passed it on. Its inner "faulted
+  `DBG_PRINTEXCEPTION_C` killed the process when a debugger passed it on. (2026-11-21: its
+  `!BeingDebugged` shortcut to DbgPrint, our own workaround from 0977613c9f3 for the broken
+  catch, is gone from both the Rust and the C, so an undebugged process reaches the DBWIN
+  monitor path again.) Its inner "faulted
   during output" also printed after every successful write. Three rows are `nolint`:
   `IsBadReadPtr`/`IsBadWritePtr` query memory and never touch it, and nls_subst's private
   `lstrcpynW` works on its own buffers. Divergences from the C: `IntWriteConsoleOutput` frees

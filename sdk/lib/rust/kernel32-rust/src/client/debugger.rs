@@ -709,10 +709,11 @@ pub unsafe extern "system" fn WaitForDebugEvent(
 #[no_mangle]
 pub unsafe extern "system" fn OutputDebugStringA(_OutputString: LPCSTR) {
     let mut _OutputString = _OutputString;
-    if (*NtCurrentPeb()).BeingDebugged == 0 {
-        DbgPrint("%s\0".as_ptr() as *const i8, _OutputString);
-        return;
-    }
+    // No `!BeingDebugged` shortcut to DbgPrint: that was our own workaround
+    // (0977613c9f3, also in the C on disk) for a catch that did not work, on arm64
+    // (dummy PSEH) and amd64 (unwind around RaiseException). With the real catch
+    // below, an undebugged process raises, lands in the handler, and reaches the
+    // DBWIN monitor path (DebugView and friends) as upstream does.
     // C: __try { RaiseException(DBG_PRINTEXCEPTION_C) } __except (EXECUTE_HANDLER)
     // { DBWIN monitor / kernel debugger }. A debugger that takes the string continues
     // the raise and we are done; one that passes it on lands in the handler below.
@@ -1605,15 +1606,6 @@ pub unsafe extern "system" fn OutputDebugStringW(OutputString: LPCWSTR) {
 // WINAPI
 // OutputDebugStringA(IN LPCSTR _OutputString)
 // {
-//     /* On ARM64 (DUMMY_PSEH) and amd64 (broken unwind tables for SEH around
-//      * RaiseException), the _SEH2_EXCEPT below doesn't catch DBG_PRINTEXCEPTION_C,
-//      * causing the unhandled exception to reach csrss which kills the process.
-//      * Bypass: if no user-mode debugger is attached, go straight to DbgPrint. */
-//     if (!NtCurrentPeb()->BeingDebugged)
-//     {
-//         DbgPrint("%s", _OutputString);
-//         return;
-//     }
 //     _SEH2_TRY
 //     {
 //         ULONG_PTR a_nArgs[2];

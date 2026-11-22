@@ -10,7 +10,9 @@
 #include <windef.h>
 #include <winbase.h>
 #include <winreg.h>
+#include <winnls.h>
 #define NTOS_MODE_USER
+#include <ndk/kefuncs.h>
 #include <ndk/rtlfuncs.h>
 #include <dhcpcsdk.h>
 #include <rpc.h>
@@ -63,8 +65,19 @@ typedef void (*handler_t) PROTO ((struct packet *));
 struct iaddr;
 struct interface_info;
 
-typedef struct _DHCP_ADAPTER {
+typedef struct _ALTERNATE_CONFIGURATION
+{
+    DWORD IpAddress;
+    DWORD SubnetMask;
+    DWORD DefaultGateway;
+    DWORD DnsServer1;
+    DWORD DnsServer2;
+} ALTERNATE_CONFIGURATION, *PALTERNATE_CONFIGURATION;
+
+typedef struct _DHCP_ADAPTER
+{
     LIST_ENTRY     ListEntry;
+    PALTERNATE_CONFIGURATION AlternateConfiguration;
     MIB_IFROW      IfMib;
     MIB_IPFORWARDROW RouterMib;
     MIB_IPADDRROW  IfAddr;
@@ -87,12 +100,14 @@ void stop_client(void);
 void AdapterInit(VOID);
 HANDLE StartAdapterDiscovery(HANDLE hStopEvent);
 void AdapterStop(VOID);
+HKEY FindAdapterKey(PDHCP_ADAPTER Adapter);
+DWORD LoadAlternateConfiguration(PDHCP_ADAPTER Adapter, HKEY AdapterKey);
 extern PDHCP_ADAPTER AdapterGetFirst(VOID);
 extern PDHCP_ADAPTER AdapterGetNext(PDHCP_ADAPTER);
 extern PDHCP_ADAPTER AdapterFindIndex( unsigned int AdapterIndex );
 extern PDHCP_ADAPTER AdapterFindName(const WCHAR *name);
 extern PDHCP_ADAPTER AdapterFindInfo( struct interface_info *info );
-extern PDHCP_ADAPTER AdapterFindByHardwareAddress( u_int8_t haddr[16], u_int8_t hlen );
+extern PDHCP_ADAPTER AdapterFindByHardwareAddress( u_int8_t *haddr, u_int8_t hlen );
 extern HANDLE InitRpc(VOID);
 extern VOID ShutdownRpc(VOID);
 extern VOID ApiInit(VOID);

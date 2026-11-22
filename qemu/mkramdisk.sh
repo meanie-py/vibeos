@@ -206,6 +206,20 @@ else
     echo "    x64 apps. Build it with: tools/fex/build-fex.sh && tools/fex/build-hello-compute.sh"
 fi
 
+# fexcachegen64.exe turns the code maps that CPU layer writes into FEX code caches (only with
+# FEX_ENABLECODECACHINGWIP=1; docs/engineering/wow64-x64-guest-design.md item 7). Native arm64,
+# staged next to the cache it fills (<SystemRoot>\fex-emu, the vibeos FEX cache directory),
+# not in system32, which an x86-64 guest that runs it sees redirected to sysamd64.
+FEXCACHEGEN64_DEFAULT="${VIBEOS_FEXCACHEGEN64_EXE:-$PROJECT_DIR/build-fex-hello/wowx64fex/fexcachegen64.exe}"
+if [ -f "$WOWX64FEX_DEFAULT" ]; then
+    if [ -f "$FEXCACHEGEN64_DEFAULT" ]; then
+        echo "reactos/fex-emu/fexcachegen64.exe=$FEXCACHEGEN64_DEFAULT" >> "$OVERLAY_LST"
+    else
+        echo "[!] FEX code cache generator MISSING ($FEXCACHEGEN64_DEFAULT): x64 code caches"
+        echo "    cannot be built on this image. Build it with: tools/fex/build-hello-compute.sh"
+    fi
+fi
+
 # --- Payloads (opt-in, VIBEOS_PAYLOAD=name[,name...]) -----------------------
 # Declarative test/demo app staging — docs/engineering/payload-harness-design.md.
 # OFF by default: with no payloads selected the compiler prints nothing and the

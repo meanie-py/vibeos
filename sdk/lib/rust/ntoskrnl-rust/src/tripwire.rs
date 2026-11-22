@@ -110,8 +110,9 @@ extern "system" {
     fn ExFreePoolWithTag(P: PVOID, Tag: ULONG);
 }
 
-/// SVCFAIL: tested on every amd64 system-call return (trap.S `KiSystemServiceExit`),
-/// so it is one byte and the rest stays out of the hot path until it is set.
+/// SVCFAIL: tested on every system-call return (amd64 trap.S `KiSystemServiceExit`, i386
+/// traphdlr.rs `KiSystemServiceHandler`, arm64 trap.rs `KiSvcDispatch`), so it is one byte
+/// and the rest stays out of the hot path until it is set.
 #[no_mangle]
 pub static mut VibeSvcTraceArmed: u8 = 0;
 /// KEYEDWAKE: read by ex-rust keyedevt.rs at every keyed-event release and wake.
@@ -123,20 +124,11 @@ static mut SVCFAIL_IMAGE_LEN: usize = 0;
 const SVCFAIL_MAX_LINES: u32 = 20000;
 static SVCFAIL_LINES: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
-/// trap.S calls this when SVCFAIL is armed, with the service's return value, the number
-/// the caller asked for (the trap frame's Rax, bit 12 set for win32k's table), the trap
-/// frame (the first four arguments are its Rcx/Rdx/R8/R9) and the kernel copy of the
-/// stack arguments (the fifth on).
-#[cfg(target_arch = "x86_64")]
-#[no_mangle]
-pub unsafe extern "system" fn VibeSvcTraceExit(
-    status: u64,
-    service: u64,
-    tf: ntkrnl_sys::ddk::PKTRAP_FRAME,
-    stack_args: *const u64,
-) {
-    let st = status as u32;
-    if st < 0xC000_0000 {
+/// Log one failing system call if the current process matches the armed image: the
+/// service's return value, the number the caller asked for (bit 12 set for win32k's table)
+/// and its first six arguments. Each arch's dispatcher calls this when SVCFAIL is armed.
+pub unsafe fn svcfail_log(status: u32, service: u32, args: [usize; 6]) {
+    if status < 0xC000_0000 {
         return; // success, informational and warning codes (STATUS_BUFFER_OVERFLOW...)
     }
     extern "system" {
@@ -170,14 +162,42 @@ pub unsafe extern "system" fn VibeSvcTraceExit(
         name,
         PsGetCurrentProcessId(),
         PsGetCurrentThreadId(),
-        (service & 0xFFFF) as u32,
-        st,
-        (*tf).Rcx as PVOID,
-        (*tf).Rdx as PVOID,
-        (*tf).R8 as PVOID,
-        (*tf).R9 as PVOID,
-        *stack_args as PVOID,
-        *stack_args.add(1) as PVOID,
+        service & 0xFFFF,
+        status,
+        args[0] as PVOID,
+        args[1] as PVOID,
+        args[2] as PVOID,
+        args[3] as PVOID,
+        args[4] as PVOID,
+        args[5] as PVOID,
+    );
+}
+
+/// trap.S calls this when SVCFAIL is armed, with the service's return value, the number
+/// the caller asked for (the trap frame's Rax), the trap frame (the first four arguments
+/// are its Rcx/Rdx/R8/R9) and the kernel copy of the stack arguments (the fifth on).
+#[cfg(target_arch = "x86_64")]
+#[no_mangle]
+pub unsafe extern "system" fn VibeSvcTraceExit(
+    status: u64,
+    service: u64,
+    tf: ntkrnl_sys::ddk::PKTRAP_FRAME,
+    stack_args: *const u64,
+) {
+    if (status as u32) < 0xC000_0000 {
+        return;
+    }
+    svcfail_log(
+        status as u32,
+        service as u32,
+        [
+            (*tf).Rcx as usize,
+            (*tf).Rdx as usize,
+            (*tf).R8 as usize,
+            (*tf).R9 as usize,
+            *stack_args as usize,
+            *stack_args.add(1) as usize,
+        ],
     );
 }
 

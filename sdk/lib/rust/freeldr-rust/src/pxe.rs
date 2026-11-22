@@ -271,11 +271,11 @@ unsafe extern "C" fn PxeGetFileInformation(FileId: u32, Information: *mut FILEIN
 
     (*Information).Attributes = (ReadOnlyFile) as u8 ;
 
-    FileName = strrchr(_OpenFileName.as_ptr(), b'/' as i32);
+    FileName = strrchr((*&raw const _OpenFileName).as_ptr(), b'/' as i32);
     if !FileName.is_null() {
         FileName = FileName.add(1);
     } else {
-        FileName = _OpenFileName.as_ptr();
+        FileName = (*&raw const _OpenFileName).as_ptr();
     }
 
     (*Information).FileNameLength = strlen(FileName) as u32;
@@ -308,7 +308,7 @@ unsafe extern "C" fn PxeOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut ULONG
     }
 
     PathLen = strlen(Path as *const i8);
-    let PathLen = min(PathLen, core::mem::size_of_val(&_OpenFileName) - 1);
+    let PathLen = min(PathLen, core::mem::size_of_val(&*&raw const _OpenFileName) - 1);
 
     i = 0;
     while i < PathLen {
@@ -321,17 +321,17 @@ unsafe extern "C" fn PxeOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut ULONG
     }
 
     core::ptr::write_bytes( // nolint: silent-failure (byte array — count==bytes)
-        _OpenFileName.as_mut_ptr().add(PathLen),
+        (*&raw mut _OpenFileName).as_mut_ptr().add(PathLen),
         0,
-        core::mem::size_of_val(&_OpenFileName) - PathLen,
+        core::mem::size_of_val(&*&raw const _OpenFileName) - PathLen,
     );
 
     core::ptr::write_bytes(&mut sizeData as *mut _ as *mut u8, 0, core::mem::size_of::<t_PXENV_TFTP_GET_FSIZE>());
     sizeData.ServerIPAddress = _ServerIP;
     core::ptr::copy_nonoverlapping(
-        _OpenFileName.as_ptr(),
+        (*&raw const _OpenFileName).as_ptr(),
         sizeData.FileName.as_mut_ptr() as *mut i8 ,
-        core::mem::size_of_val(&_OpenFileName),
+        core::mem::size_of_val(&*&raw const _OpenFileName),
     );
     if CallPxe(PXENV_TFTP_GET_FSIZE, &mut sizeData as *mut _ as PVOID) == 0 {
         ERR!("Failed to get '%s' size\n", (Path) as usize);
@@ -344,11 +344,11 @@ unsafe extern "C" fn PxeOpen(Path: PCHAR, OpenMode: OPENMODE, FileId: *mut ULONG
     core::ptr::write_bytes(&mut openData as *mut _ as *mut u8, 0, core::mem::size_of::<t_PXENV_TFTP_OPEN>());
     openData.ServerIPAddress = _ServerIP;
     core::ptr::copy_nonoverlapping(
-        _OpenFileName.as_ptr(),
+        (*&raw const _OpenFileName).as_ptr(),
         openData.FileName.as_mut_ptr() as *mut i8 ,
-        core::mem::size_of_val(&_OpenFileName),
+        core::mem::size_of_val(&*&raw const _OpenFileName),
     );
-    openData.PacketSize = core::mem::size_of_val(&_Packet) as u16;
+    openData.PacketSize = core::mem::size_of_val(&*&raw const _Packet) as u16;
 
     if CallPxe(PXENV_TFTP_OPEN, &mut openData as *mut _ as PVOID) == 0 {
         return ENOENT;
@@ -375,8 +375,8 @@ unsafe extern "C" fn PxeRead(FileId: ULONG, Buffer: PVOID, N: ULONG, Count: *mut
         core::ptr::addr_of_mut!(readData) as PVOID,
         core::mem::size_of::<t_PXENV_TFTP_READ>(),
     );
-    readData.Buffer.segment = ((_Packet.as_ptr() as ULONG_PTR & 0xf0000) / 16) as UINT16;
-    readData.Buffer.offset = (_Packet.as_ptr() as ULONG_PTR & 0xffff) as UINT16;
+    readData.Buffer.segment = (((*&raw const _Packet).as_ptr() as ULONG_PTR & 0xf0000) / 16) as UINT16;
+    readData.Buffer.offset = ((*&raw const _Packet).as_ptr() as ULONG_PTR & 0xffff) as UINT16;
 
     let mut N = N;
     let mut Buffer = Buffer;
@@ -388,7 +388,7 @@ unsafe extern "C" fn PxeRead(FileId: ULONG, Buffer: PVOID, N: ULONG, Count: *mut
         }
         RtlCopyMemory(
             Buffer,
-            _Packet.as_ptr().offset((_FilePosition - _PacketPosition) as isize) as PVOID,
+            (*&raw const _Packet).as_ptr().offset((_FilePosition - _PacketPosition) as isize) as PVOID,
             i as usize,
         );
         _FilePosition += i;
@@ -424,14 +424,14 @@ unsafe extern "C" fn PxeSeek(mut FileId: ULONG, Position: *mut LARGE_INTEGER, Se
         if PxeClose(FileId) != ESUCCESS {
             return EIO;
         }
-        if PxeOpen(_OpenFileName.as_mut_ptr(), OpenReadOnly, &mut FileId as *mut ULONG) != ESUCCESS {
+        if PxeOpen((*&raw mut _OpenFileName).as_mut_ptr(), OpenReadOnly, &mut FileId as *mut ULONG) != ESUCCESS {
             return EIO;
         }
     }
 
     core::ptr::write_bytes(&mut readData as *mut _ as *mut u8, 0, core::mem::size_of::<t_PXENV_TFTP_READ>());
-    readData.Buffer.segment = ((_Packet.as_ptr() as ULONG_PTR & 0xf0000) / 16) as UINT16;
-    readData.Buffer.offset = (_Packet.as_ptr() as ULONG_PTR & 0xffff) as UINT16;
+    readData.Buffer.segment = (((*&raw const _Packet).as_ptr() as ULONG_PTR & 0xf0000) / 16) as UINT16;
+    readData.Buffer.offset = ((*&raw const _Packet).as_ptr() as ULONG_PTR & 0xffff) as UINT16;
 
     while (*Position).__bindgen_anon_1.LowPart > _CachedLength {
         if CallPxe(PXENV_TFTP_READ, &mut readData as *mut _ as PVOID) == 0 {
@@ -505,7 +505,7 @@ unsafe fn GetCachedInfo() -> BOOLEAN {
         return 0u8;
     }
     let Packet = ((Data.Buffer.segment as ULONG_PTR) << 4).wrapping_add(Data.Buffer.offset as ULONG_PTR) as *mut UCHAR;
-    core::ptr::copy_nonoverlapping(Packet.add(20), &mut _ServerIP as *mut _ as *mut u8, core::mem::size_of::<IP4>());
+    core::ptr::copy_nonoverlapping(Packet.add(20), &raw mut _ServerIP as *mut _ as *mut u8, core::mem::size_of::<IP4>());
     1u8
 }
 

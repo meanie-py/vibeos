@@ -1368,8 +1368,17 @@ unsafe fn iop_check_stranded_completion(driver: PDRIVER_OBJECT, irp: PIRP, major
         fn KeAreApcsDisabled() -> u8; // in a critical or guarded region
     }
     let apcs_disabled = KeAreApcsDisabled();
-    let _lock = ntkrnl_sys::guards::SpinLockGuard::acquire((&raw mut (*tcb).ApcQueueLock).cast());
-    for state in (*tcb).ApcStatePointer {
+    // ApcQueueLock is an in-stack QUEUED lock everywhere the kernel takes it
+    // (KiAcquireApcLock*), so it must be taken that way here too. A plain
+    // KeAcquireSpinLock on the same word mixes two lock protocols: on one CPU both
+    // only raise IRQL, but on several the plain release zeroes a queued waiter's
+    // tail, and that waiter's own release then waits forever for a successor. The
+    // amd64 Chrome payload under -smp 4 wedged 3 of 3 that way: one CPU spinning in
+    // KiReleaseApcLockFromSynchLevel on a thread's ApcQueueLock, the rest idle.
+    let mut handle: ntkrnl_sys::ddk::KLOCK_QUEUE_HANDLE = core::mem::zeroed();
+    ntkrnl_sys::inline::ke::KiAcquireApcLockRaiseToDpc(tcb, &mut handle);
+    let mut found: Option<(u8, u8)> = None; // (KernelApcInProgress, KernelApcPending)
+    'states: for state in (*tcb).ApcStatePointer {
         if state.is_null() {
             continue;
         }
@@ -1378,27 +1387,33 @@ unsafe fn iop_check_stranded_completion(driver: PDRIVER_OBJECT, irp: PIRP, major
         let mut n = 0;
         while e != head && !e.is_null() && n < 256 {
             if e as *mut LIST_ENTRY == apc {
-                if REPORTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) >= 16 {
-                    return;
-                }
-                DbgPrint(
-                    b"[IO-STRANDED] %wZ returned 0x%x for IRP %p (major 0x%x code 0x%x) but its completion APC is still queued: the caller will not wait (irql %u, apcs-disabled %u, in-apc %u, pending %u)\n\0".as_ptr(),
-                    &raw const (*driver).DriverName,
-                    status,
-                    irp,
-                    major as u32,
-                    code,
-                    _lock.previous_irql() as u32,
-                    apcs_disabled as u32,
-                    (*state).KernelApcInProgress as u32,
-                    (*state).KernelApcPending as u32,
-                );
-                return;
+                found = Some(((*state).KernelApcInProgress, (*state).KernelApcPending));
+                break 'states;
             }
             e = (*e).Flink;
             n += 1;
         }
     }
+    let previous_irql = handle.OldIrql;
+    ntkrnl_sys::inline::ke::KiReleaseApcLock(&mut handle);
+    let Some((in_progress, pending)) = found else {
+        return;
+    };
+    if REPORTS.fetch_add(1, core::sync::atomic::Ordering::Relaxed) >= 16 {
+        return;
+    }
+    DbgPrint(
+        b"[IO-STRANDED] %wZ returned 0x%x for IRP %p (major 0x%x code 0x%x) but its completion APC is still queued: the caller will not wait (irql %u, apcs-disabled %u, in-apc %u, pending %u)\n\0".as_ptr(),
+        &raw const (*driver).DriverName,
+        status,
+        irp,
+        major as u32,
+        code,
+        previous_irql as u32,
+        apcs_disabled as u32,
+        in_progress as u32,
+        pending as u32,
+    );
 }
 
 #[no_mangle]

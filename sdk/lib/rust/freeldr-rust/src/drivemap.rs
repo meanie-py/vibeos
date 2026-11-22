@@ -211,7 +211,7 @@ pub unsafe fn DriveMapInstallInt13Handler(DriveMap: PDRIVE_MAP_LIST) {
     }
 
     RtlCopyMemory(
-        &mut DriveMapInt13HandlerMapList as *mut _ as PVOID,
+        &raw mut DriveMapInt13HandlerMapList as *mut _ as PVOID,
         DriveMap as PVOID,
         core::mem::size_of::<DRIVE_MAP_LIST>(),
     );

@@ -35,6 +35,7 @@ struct MEM_EXTENDED_PARAMETER_SHIM {
 const MEM_EXTENDED_PARAMETER_ADDRESS_REQUIREMENTS: u64 = 1;
 const MEM_TOP_DOWN: ULONG = 0x100000;
 const STATUS_DLL_NOT_FOUND: NTSTATUS = 0xC0000135_u32 as NTSTATUS;
+const STATUS_PARTIAL_COPY: NTSTATUS = 0x8000000D_u32 as NTSTATUS;
 
 #[inline(always)]
 fn nt_success(status: NTSTATUS) -> bool {
@@ -215,16 +216,115 @@ pub static mut LdrSystemDllInitBlock: SYSTEM_DLL_INIT_BLOCK = SYSTEM_DLL_INIT_BL
     pRtlpFreezeTimeBias: 0,
 };
 
-/// The Phase-C bootstrap is single-threaded, so FEX's current-thread (including
-/// duplicated-current-handle) requests can use the CPU area directly. True
-/// cross-thread access still needs kernel `ThreadWow64Context` support.
+#[repr(C)]
+struct WOW64_THREAD_BASIC_INFORMATION {
+    exit_status: NTSTATUS,
+    teb_base_address: PVOID,
+    client_id: CLIENT_ID,
+    affinity_mask: usize,
+    priority: i32,
+    base_priority: i32,
+}
+
+extern "system" {
+    fn NtQueryInformationThread(
+        ThreadHandle: HANDLE,
+        ThreadInformationClass: ULONG,
+        ThreadInformation: PVOID,
+        ThreadInformationLength: ULONG,
+        ReturnLength: *mut ULONG,
+    ) -> NTSTATUS;
+}
+
+/// Another thread's guest context, read the way a debugger reads it: its TEB's
+/// CPU-reserved TLS slot, then the 16-aligned context after the `WOW64_CPURESERVED`
+/// header, both from the thread's own process. That area is current whenever the guest
+/// thread is stopped at a syscall or exception boundary (a suspended thread parked in a
+/// win32k call, which is what a sampler wants). Writes stay current-thread only.
+/// Diverges from Windows on access: the handle also needs THREAD_QUERY_(LIMITED_)INFORMATION
+/// (for the TEB address), where Windows reads the context in the kernel
+/// (`ThreadWow64Context`) and needs only THREAD_GET_CONTEXT. A GET_CONTEXT-only handle
+/// gets STATUS_ACCESS_DENIED, never another thread's context.
+unsafe fn wow64_remote_context(Thread: HANDLE, Out: *mut WOW64_CONTEXT) -> NTSTATUS {
+    const THREAD_BASIC_INFORMATION_CLASS: ULONG = 0;
+    const PROCESS_VM_READ_: ACCESS_MASK = 0x0010;
+    let mut Info: WOW64_THREAD_BASIC_INFORMATION = core::mem::zeroed();
+    let Status = NtQueryInformationThread(
+        Thread,
+        THREAD_BASIC_INFORMATION_CLASS,
+        &mut Info as *mut _ as PVOID,
+        core::mem::size_of::<WOW64_THREAD_BASIC_INFORMATION>() as ULONG,
+        null_mut(),
+    );
+    if !nt_success(Status) {
+        return Status;
+    }
+    if Info.teb_base_address.is_null() {
+        return STATUS_INVALID_PARAMETER;
+    }
+    let mut Process: HANDLE = null_mut();
+    let mut Attributes: OBJECT_ATTRIBUTES = core::mem::zeroed();
+    Attributes.Length = core::mem::size_of::<OBJECT_ATTRIBUTES>() as ULONG;
+    let mut Client = Info.client_id;
+    Client.UniqueThread = null_mut();
+    let Status = NtOpenProcess(&mut Process, PROCESS_VM_READ_, &mut Attributes, &mut Client);
+    if !nt_success(Status) {
+        return Status;
+    }
+    let read = |at: usize, to: PVOID, len: usize| -> NTSTATUS {
+        let mut Done: SIZE_T = 0;
+        let s = NtReadVirtualMemory(Process, at as PVOID, to, len as SIZE_T, &mut Done);
+        if nt_success(s) && Done as usize != len {
+            STATUS_PARTIAL_COPY
+        } else {
+            s
+        }
+    };
+    let Slot = Info.teb_base_address as usize
+        + core::mem::offset_of!(TEB, TlsSlots)
+        + WOW64_TLS_CPURESERVED * core::mem::size_of::<PVOID>();
+    let mut Cpu: usize = 0;
+    let mut Header = WOW64_CPURESERVED { Flags: 0, Machine: 0 };
+    let mut Status = read(Slot, &mut Cpu as *mut usize as PVOID, core::mem::size_of::<usize>());
+    if nt_success(Status) && Cpu == 0 {
+        Status = STATUS_INVALID_PARAMETER; // not a WOW64 thread, or not started yet
+    }
+    if nt_success(Status) {
+        Status = read(Cpu, &mut Header as *mut _ as PVOID, core::mem::size_of::<WOW64_CPURESERVED>());
+    }
+    if nt_success(Status) && Header.Machine != 0x014c {
+        Status = STATUS_INVALID_PARAMETER; // IMAGE_FILE_MACHINE_I386 is the only guest with a WOW64_CONTEXT
+    }
+    if nt_success(Status) {
+        let Ctx = (Cpu + core::mem::size_of::<WOW64_CPURESERVED>() + 15) & !15usize;
+        Status = read(Ctx, Out as PVOID, core::mem::size_of::<WOW64_CONTEXT>());
+    }
+    NtClose(Process);
+    Status
+}
+
+/// The current thread (including a duplicated current-thread handle) reads its own CPU
+/// area directly; any other thread is read from its process (`wow64_remote_context`).
 #[no_mangle]
 pub unsafe extern "system" fn RtlWow64GetThreadContext(
-    _ThreadHandle: HANDLE,
+    ThreadHandle: HANDLE,
     Context: PVOID,
 ) -> NTSTATUS {
     if Context.is_null() {
         return STATUS_INVALID_PARAMETER;
+    }
+    let current = ThreadHandle == NtCurrentThread() || {
+        let mut Info: WOW64_THREAD_BASIC_INFORMATION = core::mem::zeroed();
+        nt_success(NtQueryInformationThread(
+            ThreadHandle,
+            0,
+            &mut Info as *mut _ as PVOID,
+            core::mem::size_of::<WOW64_THREAD_BASIC_INFORMATION>() as ULONG,
+            null_mut(),
+        )) && Info.client_id.UniqueThread == (*NtCurrentTeb()).ClientId.UniqueThread
+    };
+    if !current {
+        return wow64_remote_context(ThreadHandle, Context as *mut WOW64_CONTEXT);
     }
     let mut CpuContext: PVOID = null_mut();
     let Status = RtlWow64GetCurrentCpuArea(null_mut(), &mut CpuContext, null_mut());

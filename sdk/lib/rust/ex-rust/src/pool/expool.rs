@@ -1137,6 +1137,24 @@ unsafe fn exp_allocate_pool_aligned_at(
         return p;
     }
     if ExpPoolFlags & (POOL_FLAG_VERIFIER | POOL_FLAG_SPECIAL_POOL) != 0 && MmIsSpecialPoolAddress(p) != 0 {
+        // Special pool cannot be carved: each block owns its page, ends flush against the
+        // guard page (rounded down to POOL_BLOCK_SIZE) and is checked as a whole when freed.
+        // Ask it again for a size whose end-of-page placement puts `+ offset` on a cache
+        // line. Without this, SPECIALPOOL=* on amd64 and arm64 panicked in classpnp
+        // (misaligned 64-aligned device extension, since 78bbf7aae1a). Underrun mode places
+        // blocks at the page start, so it keeps `p`, still misaligned unless offset is.
+        let mut sized = (number_of_bytes + POOL_BLOCK_SIZE - 1) & !(POOL_BLOCK_SIZE - 1);
+        while sized % POOL_CACHE_ALIGNMENT != offset % POOL_CACHE_ALIGNMENT {
+            sized += POOL_BLOCK_SIZE;
+        }
+        let q = exp_allocate_pool_unaligned(pool_type, sized, tag);
+        if !q.is_null() && (q as SIZE_T + offset) & (POOL_CACHE_ALIGNMENT - 1) == 0 {
+            ExFreePoolWithTag(p, tag);
+            return q;
+        }
+        if !q.is_null() {
+            ExFreePoolWithTag(q, tag);
+        }
         return p;
     }
 

@@ -1,0 +1,22 @@
+# idlewatch — what does an untouched desktop spend its CPU on? Boots normally (winlogon's
+# test ladder and its stock i386 applets included), lets the desktop sit for a few minutes,
+# then prints every process's CPU time against its age and samples the busiest one's threads
+# (x86 frames too, for a 32-bit app under WOW64). Found because osk.exe and magnify.exe took
+# ~45% of a one-vCPU boot with nobody touching them.
+#   VIBEOS_PAYLOAD=idlewatch ./vibeos-cli build --arch amd64
+#   ./vibeos-cli smoke --arch amd64 --payload idlewatch
+build_hint: "tools/payloads/apitest/build.sh {arch}"
+name: idlewatch
+description: idle the desktop for minutes, then report per-process CPU and sample the busiest process
+arches: [amd64]
+
+binaries:
+  - src: tools/payloads/apitest/apitest-sweep-{arch}.exe
+    root: image
+    dest: ProgramData/Microsoft/Windows/Start Menu/Programs/Startup/apitest-sweep.exe
+  - src: tools/payloads/idlewatch/commands.txt
+    dest: bin/apitest-suites.txt
+
+test:
+  launch_marker: "[APITEST-SWEEP] done"
+  launch_drain_secs: 1800

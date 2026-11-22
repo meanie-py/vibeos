@@ -13,6 +13,7 @@ pub static CPP_COM_WSTR_47678CDC8AAF: [WCHAR; 15] = [0x0053, 0x0068, 0x0065, 0x0
 pub static CPP_COM_WSTR_50CEA9783DF2: [WCHAR; 36] = [0x0043, 0x006F, 0x006E, 0x0074, 0x0072, 0x006F, 0x006C, 0x0020, 0x0050, 0x0061, 0x006E, 0x0065, 0x006C, 0x005C, 0x0044, 0x0065, 0x0073, 0x006B, 0x0074, 0x006F, 0x0070, 0x005C, 0x0057, 0x0069, 0x006E, 0x0064, 0x006F, 0x0077, 0x004D, 0x0065, 0x0074, 0x0072, 0x0069, 0x0063, 0x0073, 0x0000];
 pub static CPP_COM_WSTR_88409267423F: [WCHAR; 16] = [0x0053, 0x0068, 0x0065, 0x006C, 0x006C, 0x0020, 0x0049, 0x0063, 0x006F, 0x006E, 0x0020, 0x0053, 0x0069, 0x007A, 0x0065, 0x0000];
 
+use win32macros_rust::{debugstr_a, debugstr_w};
 use core::ffi::c_void;
 use crate::prelude::*;
 use crate::shell32::sdk_consts::*;
@@ -192,6 +193,8 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
     // from inside it, and the epilogue below is the C `fail:` cleanup verbatim.
     'fail: {
         if TargetIconInfo.hbmColor.is_null() {
+            /* Maybe we'll support this at some point */
+            FIXME!("1bpp icon wants its overlay!\n");
             break 'fail;
         }
 
@@ -219,6 +222,8 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
         }
 
         if ShortcutIconInfo.hbmColor.is_null() {
+            /* Maybe we'll support this at some point */
+            FIXME!("Should draw 1bpp overlay!\n");
             break 'fail;
         }
 
@@ -279,6 +284,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
                 if GetDIBits(TargetDC, TargetIconInfo.hbmColor, 0,
                                             (TargetBitmapInfo.bmHeight) as u32, bits, lpbmi,
                                             DIB_RGB_COLORS) == 0 {
+                    ERR!("GetBIBits failed!\n");
                     HeapFree(GetProcessHeap(), 0, bits);
                     break 'fail;
                 }
@@ -323,6 +329,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
             if GetDIBits(TargetDC, ShortcutIconInfo.hbmColor, 0,
                                         (ShortcutBitmapInfo.bmHeight) as u32, bits, lpbmi,
                                         DIB_RGB_COLORS) == 0 {
+                ERR!("GetBIBits failed!\n");
                 HeapFree(GetProcessHeap(), 0, bits);
                 break 'fail;
             }
@@ -348,6 +355,7 @@ unsafe extern "C" fn SIC_OverlayShortcutImage(SourceIcon: HICON, large: BOOL) ->
             if SetDIBits(TargetDC, ShortcutIconInfo.hbmColor, 0,
                                         (ShortcutBitmapInfo.bmHeight) as u32, bits, lpbmi,
                                         DIB_RGB_COLORS) == 0 {
+                ERR!("SetBIBits failed!, %lu\n", GetLastError());
                 HeapFree(GetProcessHeap(), 0, bits);
                 break 'fail;
             }
@@ -465,6 +473,11 @@ unsafe extern "C" fn SIC_IconAppend(
         index1 = ImageList_AddIcon!(ShellBigIconList, hBigIcon);
 
         if (index == -1) || (index1 == -1) {
+            WARN!(
+                "Something went wrong when adding the icon to the list: small - 0x%x, big - 0x%x.\n",
+                index,
+                index1,
+            );
             if index != -1 {
                 ImageList_Remove(ShellSmallIconList, index);
             }
@@ -477,6 +490,8 @@ unsafe extern "C" fn SIC_IconAppend(
             }
         } else {
             if index != index1 {
+                FIXME!("iconlists out of sync 0x%x 0x%x\n", index, index1);
+                /* What to do ???? */
             }
             (*lpsice).dwListIndex = index as u32;
             ret = (*lpsice).dwListIndex as i32;
@@ -646,28 +661,28 @@ pub unsafe extern "C" fn SIC_Initialize() -> i32 {
 
     ShellSmallIconList = ImageList_Create(ShellSmallIconSize, ShellSmallIconSize, ilMask, 100, 100);
     if ShellSmallIconList.is_null() {
-        result = result;
+        ERR!("Failed to create the small icon list.\n");
     } else {
         ShellBigIconList = ImageList_Create(ShellLargeIconSize, ShellLargeIconSize, ilMask, 100, 100);
         if ShellBigIconList.is_null() {
-            result = result;
+            ERR!("Failed to create the big icon list.\n");
         } else {
             hSm = LoadImageW(shell32_hInstance, MAKEINTRESOURCEW(IDI_SHELL_DOCUMENT),
                                 IMAGE_ICON, ShellSmallIconSize, ShellSmallIconSize,
                                 LR_SHARED | LR_DEFAULTCOLOR) as HICON;
             if hSm.is_null() {
-                result = result;
+                ERR!("Failed to load small IDI_SHELL_FILE icon!\n");
             } else {
                 hLg = LoadImageW(shell32_hInstance, MAKEINTRESOURCEW(IDI_SHELL_DOCUMENT),
                                 IMAGE_ICON, ShellLargeIconSize, ShellLargeIconSize,
                                 LR_SHARED | LR_DEFAULTCOLOR) as HICON;
                 if hLg.is_null() {
-                    result = result;
+                    ERR!("Failed to load large IDI_SHELL_FILE icon!\n");
                 } else {
                     if SIC_IconAppend(core::ptr::addr_of!(swShell32Name).cast(), (IDI_SHELL_DOCUMENT - 1) as i32, hSm, hLg, 0) == INVALID_INDEX {
-                        result = result;
+                        ERR!("Failed to add IDI_SHELL_FILE icon to cache.\n");
                     } else if SIC_IconAppend(core::ptr::addr_of!(swShell32Name).cast(), -(IDI_SHELL_DOCUMENT as i32), hSm, hLg, 0) == INVALID_INDEX {
-                        result = result;
+                        ERR!("Failed to add IDI_SHELL_FILE icon to cache.\n");
                     } else {
                         result = TRUE;
                     }
@@ -890,7 +905,7 @@ pub unsafe extern "system" fn SHMapIDListToImageListIndexAsync(
     piIndex: *mut i32,
     piIndexSel: *mut i32,
 ) -> HRESULT {
-    // FIXME("(%p, %p, %p, 0x%08x, %p, %p, %p, %p, %p)\n", pts, psf, pidl, flags, pfn, pvData, pvHint, piIndex, piIndexSel);
+    FIXME!("(%p, %p, %p, 0x%08x, %p, %p, %p, %p, %p)\n", pts, psf, pidl, flags, pfn, pvData, pvHint, piIndex, piIndexSel);
     E_FAIL
 }
 
@@ -1121,7 +1136,7 @@ pub unsafe extern "system" fn ExtractAssociatedIconExW(
     lpiIconIdx: LPWORD,
     lpiIconId: LPWORD,
 ) -> HICON {
-    // FIXME("%p %s %p %p): stub\n", hInst, debugstr_w(lpIconPath), lpiIconIdx, lpiIconId);
+    FIXME!("%p %s %p %p): stub\n", hInst, debugstr_w(lpIconPath), lpiIconIdx, lpiIconId);
     core::ptr::null_mut()
 }
 
@@ -1256,11 +1271,13 @@ pub unsafe extern "system" fn SHDefExtractIconA(
 
 #[no_mangle]
 pub unsafe extern "system" fn SHGetIconOverlayIndexA(pszIconPath: *const i8, iIconIndex: i32) -> i32 {
+    FIXME!("%s, %d\n", debugstr_a(pszIconPath), iIconIndex);
     -1
 }
 
 #[no_mangle]
 pub unsafe extern "system" fn SHGetIconOverlayIndexW(pszIconPath: PCWSTR, iIconIndex: i32) -> i32 {
+    FIXME!("%s, %d\n", debugstr_w(pszIconPath), iIconIndex);
     -1
 }
 

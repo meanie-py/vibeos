@@ -178,18 +178,18 @@ pub unsafe extern "C" fn LoadAndBootLinux(
         Description = GetArgumentValue(Argc, Argv, b"LoadIdentifier\0".as_ptr() as PCSTR);
         if !Description.is_null() && *Description != 0 {
             RtlStringCbPrintfA(
-                LinuxBootDescription.as_mut_ptr(),
-                core::mem::size_of_val(&LinuxBootDescription),
+                (*&raw mut LinuxBootDescription).as_mut_ptr(),
+                core::mem::size_of_val(&*&raw const LinuxBootDescription),
                 b"Loading %s...\0".as_ptr() as *const i8,
                 Description,
             );
         } else {
-            strcpy(LinuxBootDescription.as_mut_ptr(), b"Loading Linux...\0".as_ptr() as PCSTR);
+            strcpy((*&raw mut LinuxBootDescription).as_mut_ptr(), b"Loading Linux...\0".as_ptr() as PCSTR);
         }
 
         UiDrawBackdrop(UiGetScreenHeight());
-        UiDrawStatusText(LinuxBootDescription.as_ptr());
-        UiDrawProgressBarCenter(LinuxBootDescription.as_ptr());
+        UiDrawStatusText((*&raw const LinuxBootDescription).as_ptr());
+        UiDrawProgressBarCenter((*&raw const LinuxBootDescription).as_ptr());
 
         UiShowMessageBoxesInArgv(Argc, Argv);
 
@@ -363,7 +363,7 @@ pub unsafe extern "C" fn LoadAndBootLinux(
     LinuxCommandLineSize = 0;
     LinuxKernelLoadAddress = core::ptr::null_mut();
     LinuxInitrdLoadAddress = core::ptr::null_mut();
-    *LinuxBootDescription.as_mut_ptr() = 0;
+    *(*&raw mut LinuxBootDescription).as_mut_ptr() = 0;
 
     ENOEXEC
 }

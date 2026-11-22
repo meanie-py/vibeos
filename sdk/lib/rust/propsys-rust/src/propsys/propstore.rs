@@ -654,7 +654,7 @@ pub unsafe extern "system" fn PSCreatePropertyStoreFromObject(
         return hr;
     }
 
-    DPRINT1!("Unimplemented for %s.\n", debugstr_guid(riid));
+    FIXME!("Unimplemented for %s.\n", debugstr_guid(riid));
     return E_NOTIMPL;
 }
 

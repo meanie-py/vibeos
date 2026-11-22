@@ -7,10 +7,16 @@
 #![allow(private_interfaces)]
 #![allow(clippy::all)]
 
+
 //! menuband-rust — the CMenuBand shell menu-band class (dll/win32/shell32/shellmenu/
 //! CMenuBand.cpp), translated to Rust and built as a standalone staticlib
 //! (libmenuband_rust.a) linked into BOTH shell32.dll and rshell.dll. See Cargo.toml for
 //! why this is a separate crate rather than a shell32-rust module.
+
+// FAILED_UNEXPECTEDLY! (#[macro_export]) reaches the shared port through $crate, so a crate
+// that expands it need not depend on win32macros-rust itself.
+#[doc(hidden)]
+pub use win32macros_rust as __win32macros;
 
 // Wine debug calls are macros in the C++ source. Keep them as macros in Rust too: an
 // out-of-line no-op function is an optimization/ABI barrier and is not equivalent.

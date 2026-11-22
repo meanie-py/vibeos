@@ -96,6 +96,182 @@ static void sd_sample_thread(DWORD pid, DWORD tid, struct sd_thread_view *v)
     HeapFree(GetProcessHeap(), 0, buf);
 }
 
+/* Every process's CPU time so far against its age, most CPU first: says which processes
+ * kept the (by default single) vCPU busy during a run. A process that should idle (osk,
+ * an x64 test window) showing CPU close to its age is spinning. Same SystemProcessInformation
+ * walk as above: UserTime 0x28, KernelTime 0x30, CreateTime 0x20, ImageName UNICODE_STRING
+ * at 0x38 on both, UniqueProcessId 0x50 (x64) / 0x44 (x86). Returns the busiest pid that
+ * is not idle, System or the caller, so the caller can sample its threads (0 if none). */
+static __inline DWORD sd_report_process_cpu(const char *tag, int top)
+{
+    typedef LONG (NTAPI *qsi_fn)(ULONG, PVOID, ULONG, PULONG);
+    qsi_fn qsi = (qsi_fn)GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtQuerySystemInformation");
+    if (!qsi)
+        return 0;
+    ULONG size = 256 * 1024, need = 0;
+    BYTE *buf = NULL;
+    for (int tries = 0; tries < 4; tries++) {
+        buf = HeapAlloc(GetProcessHeap(), 0, size);
+        if (!buf)
+            return 0;
+        LONG st = qsi(5, buf, size, &need);
+        if (st >= 0)
+            break;
+        HeapFree(GetProcessHeap(), 0, buf);
+        buf = NULL;
+        if (st != (LONG)0xC0000004)
+            return 0;
+        size = need > size ? need + 64 * 1024 : size * 2;
+    }
+    if (!buf)
+        return 0;
+    const size_t pid_off = sizeof(void *) == 8 ? 0x50 : 0x44;
+    const size_t name_buf_off = sizeof(void *) == 8 ? 0x40 : 0x3C;
+    FILETIME now_ft;
+    GetSystemTimeAsFileTime(&now_ft);
+    LONGLONG now = ((LONGLONG)now_ft.dwHighDateTime << 32) | now_ft.dwLowDateTime;
+    DWORD hog = 0;
+    struct { BYTE *p; LONGLONG cpu; } rows[512];
+    int n = 0;
+    for (BYTE *p = buf; n < 512;) {
+        ULONG next = *(ULONG *)p;
+        rows[n].p = p;
+        rows[n].cpu = *(LONGLONG *)(p + 0x28) + *(LONGLONG *)(p + 0x30);
+        n++;
+        if (!next)
+            break;
+        p += next;
+    }
+    for (int i = 0; i < n && i < top; i++) {
+        int best = i;
+        for (int j = i + 1; j < n; j++)
+            if (rows[j].cpu > rows[best].cpu)
+                best = j;
+        if (best != i) {
+            BYTE *tp = rows[i].p; LONGLONG tc = rows[i].cpu;
+            rows[i] = rows[best];
+            rows[best].p = tp; rows[best].cpu = tc;
+        }
+        BYTE *p = rows[i].p;
+        USHORT len = *(USHORT *)(p + 0x38);
+        const WCHAR *name = *(const WCHAR **)(p + name_buf_off);
+        DWORD pid = (DWORD)(ULONG_PTR)*(HANDLE *)(p + pid_off);
+        if (!hog && pid > 4 && pid != GetCurrentProcessId())
+            hog = pid;
+        LONGLONG created = *(LONGLONG *)(p + 0x20);
+        LONGLONG age_ms = created ? (now - created) / 10000 : 0;
+        SAY("cputime %s pid=%lu %-.*ls kernel=%lld ms user=%lld ms age=%lld ms\n", tag,
+            (unsigned long)pid, name ? (int)(len / 2) : 6,
+            name ? name : L"(idle)", *(LONGLONG *)(p + 0x30) / 10000,
+            *(LONGLONG *)(p + 0x28) / 10000, age_ms);
+    }
+    HeapFree(GetProcessHeap(), 0, buf);
+    return hog;
+}
+
+#if defined(_M_X64) || defined(__x86_64__)
+/* A 32-bit thread under WOW64: its 64-bit context is the WOW64 layer (wow64.dll, win32u
+ * thunks), which says only "in a syscall". Its x86 context (Wow64GetThreadContext, current
+ * at a syscall boundary) and 32-bit stack say which guest code made the call. Modules come
+ * from the guest loader's own list: ProcessWow64Information is the PEB32; PEB32.Ldr 0x0c,
+ * PEB_LDR_DATA32.InLoadOrderModuleList 0x0c, LDR_DATA_TABLE_ENTRY32 DllBase 0x18,
+ * SizeOfImage 0x20, BaseDllName 0x2c (Buffer at 0x30). */
+struct sd_mod32 { DWORD base, size; char name[32]; };
+static int sd_wow64_modules(HANDLE ph, struct sd_mod32 *mods, int max)
+{
+    typedef LONG (NTAPI *qip_fn)(HANDLE, ULONG, PVOID, ULONG, PULONG);
+    qip_fn qip = (qip_fn)GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtQueryInformationProcess");
+    ULONG_PTR peb32 = 0;
+    if (!qip || qip(ph, 26 /* ProcessWow64Information */, &peb32, sizeof peb32, NULL) < 0 || !peb32)
+        return 0;
+    DWORD ldr = 0, head, link;
+    SIZE_T n;
+    if (!ReadProcessMemory(ph, (LPCVOID)(peb32 + 0x0c), &ldr, 4, &n) || !ldr)
+        return 0;
+    head = ldr + 0x0c;
+    if (!ReadProcessMemory(ph, (LPCVOID)(ULONG_PTR)head, &link, 4, &n))
+        return 0;
+    int count = 0;
+    while (link && link != head && count < max) {
+        BYTE e[0x34];
+        if (!ReadProcessMemory(ph, (LPCVOID)(ULONG_PTR)link, e, sizeof e, &n))
+            break;
+        WCHAR w[32] = { 0 };
+        USHORT len = *(USHORT *)(e + 0x2c);
+        DWORD buf = *(DWORD *)(e + 0x30);
+        if (len > sizeof w - 2)
+            len = sizeof w - 2;
+        if (buf)
+            ReadProcessMemory(ph, (LPCVOID)(ULONG_PTR)buf, w, len, &n);
+        mods[count].base = *(DWORD *)(e + 0x18);
+        mods[count].size = *(DWORD *)(e + 0x20);
+        stackdump_ascii(w, mods[count].name, sizeof mods[count].name);
+        count++;
+        link = *(DWORD *)e;
+    }
+    return count;
+}
+static void sd_wow64_where(const struct sd_mod32 *mods, int nm, DWORD v, char *out, size_t cap)
+{
+    for (int m = 0; m < nm; m++)
+        if (v >= mods[m].base && v - mods[m].base < mods[m].size) {
+            wsprintfA(out, "%s+0x%lx", mods[m].name, (unsigned long)(v - mods[m].base));
+            return;
+        }
+    (void)cap;
+    out[0] = 0;
+}
+static void sd_wow64_dump(HANDLE ph, HANDLE th, DWORD pid, DWORD tid)
+{
+    typedef BOOL (WINAPI *w64ctx_fn)(HANDLE, PWOW64_CONTEXT);
+    w64ctx_fn get = (w64ctx_fn)GetProcAddress(GetModuleHandleA("kernel32.dll"), "Wow64GetThreadContext");
+    BOOL wow = FALSE;
+    if (!get || !IsWow64Process(ph, &wow) || !wow)
+        return;
+    static struct sd_mod32 mods[96];
+    int nm = sd_wow64_modules(ph, mods, 96);
+    WOW64_CONTEXT c;
+    char pcs[8 * 40] = "", where[64];
+    for (int k = 0; k < 8; k++) {
+        memset(&c, 0, sizeof c);
+        c.ContextFlags = WOW64_CONTEXT_CONTROL;
+        SuspendThread(th);
+        BOOL ok = get(th, &c);
+        ResumeThread(th);
+        if (ok) {
+            sd_wow64_where(mods, nm, c.Eip, where, sizeof where);
+            wsprintfA(pcs + lstrlenA(pcs), " %08lx%s%s", (unsigned long)c.Eip, where[0] ? ":" : "", where);
+        } else {
+            wsprintfA(pcs + lstrlenA(pcs), " (err %lu)", GetLastError());
+        }
+        Sleep(100);
+    }
+    SAY("  x86 pc samples pid=%lu tid=%lu (%d guest modules):%s\n", pid, tid, nm, pcs);
+    memset(&c, 0, sizeof c);
+    c.ContextFlags = WOW64_CONTEXT_CONTROL;
+    SuspendThread(th);
+    BOOL ok = get(th, &c);
+    DWORD stack[256];
+    SIZE_T got = 0;
+    if (ok)
+        for (SIZE_T off = 0; off < sizeof stack; off += 256) {
+            SIZE_T n = 0;
+            if (!ReadProcessMemory(ph, (LPCVOID)(ULONG_PTR)(c.Esp + off), (char *)stack + off, 256, &n) || n != 256)
+                break;
+            got += 256;
+        }
+    ResumeThread(th);
+    int shown = 0;
+    for (SIZE_T i = 0; i < got / 4 && shown < 30; i++) {
+        sd_wow64_where(mods, nm, stack[i], where, sizeof where);
+        if (where[0]) {
+            SAY("  x86 stack +0x%x %08lx %s\n", (unsigned)(i * 4), (unsigned long)stack[i], where);
+            shown++;
+        }
+    }
+}
+#endif
+
 static void dump_thread_body(DWORD pid, DWORD tid)
 {
     MODULEENTRY32W me[128];
@@ -112,7 +288,10 @@ static void dump_thread_body(DWORD pid, DWORD tid)
         CloseHandle(snap);
     }
     SD_STAGE(1);
-    HANDLE th = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE, tid);
+    /* THREAD_QUERY_INFORMATION too: our Wow64GetThreadContext finds a remote thread's TEB
+     * through ThreadBasicInformation (Windows reads the context in the kernel and needs only
+     * THREAD_GET_CONTEXT; see RtlWow64GetThreadContext). */
+    HANDLE th = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, tid);
     HANDLE ph = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
     if (!th || !ph) {
         SAY("  stuck pid=%lu tid=%lu: cannot open (thread=%p process=%p)\n", pid, tid, th, ph);
@@ -144,6 +323,9 @@ static void dump_thread_body(DWORD pid, DWORD tid)
         Sleep(100);
     }
     SAY("  pc samples:%s\n", pcs);
+#if defined(_M_X64) || defined(__x86_64__)
+    sd_wow64_dump(ph, th, pid, tid);
+#endif
     ctx.ContextFlags = CONTEXT_CONTROL;
     SD_STAGE(2);
     SuspendThread(th);
