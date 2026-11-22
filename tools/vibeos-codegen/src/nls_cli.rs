@@ -3,12 +3,15 @@
 //!
 //! The source is fetched at generation time into a cache OUTSIDE the repo
 //! ($VIBEOS_NLS_CACHE, default ~/.cache/vibeos-nls/), so it can never be staged, and is
-//! refused unless its sha256 is the pinned one. Not part of `--all`, because it needs that
-//! file. `--check` exits 0 when the committed output matches a fresh generation, 1 when it
-//! is stale, and 3 when it cannot be verified (no cache, no network), never 0 for that.
+//! refused unless its sha256 is the pinned one. Not part of `--all`, because a full check needs
+//! that file. The committed output is also pinned by sha256 (OUTPUT_SHA256), so `--check`
+//! always gives a real verdict: with the source it regenerates and requires the result to
+//! equal both the committed file and the pin; without it (no cache, no network) it checks
+//! the committed file against the pin and says that the source was not re-verified. Exit
+//! 0 verified, 1 mismatch.
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use vibeos_codegen::sortdefault::{sha256_hex, sortdefault, SOURCE_SHA256, SOURCE_URL};
+use vibeos_codegen::sortdefault::{sha256_hex, sortdefault, OUTPUT_SHA256, SOURCE_SHA256, SOURCE_URL};
 
 pub const NAMES: &[&str] = &["sortdefault"];
 const OUTPUT: &str = "media/nls/sortdefault.nls";
@@ -70,30 +73,48 @@ pub fn run(args: Vec<String>) -> Result<u8, String> {
         }
     }
     let out = root.join(OUTPUT);
+    let committed = std::fs::read(&out).ok();
+    let pinned = committed.as_deref().map(sha256_hex).is_some_and(|h| h == OUTPUT_SHA256);
     let text = match source() {
         Ok(t) => t,
         Err(e) if check => {
-            eprintln!("UNVERIFIED: {OUTPUT} could not be checked: {e}");
-            return Ok(3);
+            // No source: verify what is committed against the reviewed pin.
+            return Ok(if pinned {
+                eprintln!("OK (offline): {OUTPUT} matches OUTPUT_SHA256; the source was not re-verified ({e})");
+                0
+            } else {
+                eprintln!("MISMATCH: {OUTPUT} does not match OUTPUT_SHA256 {OUTPUT_SHA256}, and the source is unavailable ({e})");
+                1
+            });
         }
         Err(e) => return Err(e),
     };
     let bytes = sortdefault(&text)?;
+    let fresh = sha256_hex(&bytes);
     if check {
-        return Ok(match std::fs::read(&out) {
-            Ok(old) if old == bytes => {
-                eprintln!("OK: {OUTPUT} matches a fresh generation");
-                0
-            }
-            Ok(_) => {
-                eprintln!("STALE: {OUTPUT} differs from a fresh generation; run tools/codegen sortdefault");
-                1
-            }
-            Err(e) => {
-                eprintln!("MISSING: {}: {e}", out.display());
-                1
-            }
-        });
+        let same = committed.as_deref() == Some(&bytes[..]);
+        let pin_ok = fresh == OUTPUT_SHA256;
+        if same && pin_ok {
+            eprintln!("OK: {OUTPUT} matches a fresh generation and OUTPUT_SHA256");
+            return Ok(0);
+        }
+        if !same {
+            eprintln!(
+                "STALE: {OUTPUT} is {} a fresh generation (sha256 {fresh}); run tools/codegen sortdefault",
+                if committed.is_some() { "not" } else { "missing, not" }
+            );
+        }
+        if !pin_ok {
+            eprintln!("STALE PIN: a fresh generation is sha256 {fresh}, but OUTPUT_SHA256 says {OUTPUT_SHA256}");
+        }
+        return Ok(1);
+    }
+    if fresh != OUTPUT_SHA256 {
+        return Err(format!(
+            "the generated file's sha256 is {fresh}, not the pinned OUTPUT_SHA256 {OUTPUT_SHA256}. \
+             If the change is intended, update OUTPUT_SHA256 in tools/vibeos-codegen/src/sortdefault.rs \
+             in the same commit as the regenerated file."
+        ));
     }
     write_if_changed(&out, &bytes)?;
     eprintln!("OK: {OUTPUT} ({} bytes)", bytes.len());
