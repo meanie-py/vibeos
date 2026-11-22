@@ -622,8 +622,12 @@ extends it from the boot spine to every fully-Rust module.
      arch cmake builds wow64cpu for. A source `.S` among the module's own objects
      (win32u's sys-stubs.S, wow64cpu.S) replays like C, since its recipe line is `asm`.
      Until now only the per-arch objects path took one.
+   - **2026-11-22: wdmaud.drv converted**, EQUIVALENT ×3. Its "two bodies" were the body
+     (`wdmaud_drv_rust`) plus mmixer-rust's user-mode variant, a static library
+     (`engine:crate:mmixer-rust:user:FALSE`). The body's name match missed it because the
+     target is dotted. The match now also takes `<target with . as _>_rust`.
    - **RESUME HERE (2026-11-08, fleet pause).**
-     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer, filebrowser, dbghelp, libtirpc, rapps.com, libtiff, glu32, ufat, ufatx, ucdfs, svchost, win32u and wow64cpu followed, ratchet 14.)*
+     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer, filebrowser, dbghelp, libtirpc, rapps.com, libtiff, glu32, ufat, ufatx, ucdfs, svchost, win32u, wow64cpu and wdmaud.drv followed, ratchet 13.)*
      - The cmake_linked_modules ratchet is at **31**. This week's 24 cells are queued in the
        integrator's combined batch 169+170 on `cells-dotted` 0fa7e73bb5c, which includes
        cells-fusion and cells-exports: the five export holds, fusion ×3, rpcrt4, uniata and
@@ -632,7 +636,7 @@ extends it from the boot spine to every fully-Rust module.
      - **Next, by size:**
        - msvcrt: its custom cargo command shape;
        - setuplib (nativedll, not built in this configuration);
-       - the CRTs and wdmaud.drv (two bodies).
+       - the CRTs.
        - Run `tools/codegen cargo-cell <target>` per module for its current refusal.
      - **Owed (2026-11-21):** audit the committed Rust-body cells against cmake for the
        explorer class (an unreferenced shim object that cmake loads and the archive
