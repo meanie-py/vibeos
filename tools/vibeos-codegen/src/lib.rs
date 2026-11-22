@@ -22,6 +22,7 @@ pub mod rpc;
 pub mod source_walk;
 pub mod tables;
 pub mod ucrt_cases;
+pub mod unorm;
 pub mod wow64;
 
 use std::path::{Path, PathBuf};
@@ -40,6 +41,7 @@ pub const GENERATORS: &[&str] = &[
     "ssdt",
     "nls",
     "msvcrt-errlist",
+    "unorm",
 ];
 
 pub struct Output {
@@ -98,7 +100,7 @@ pub fn generate(
     if !GENERATORS.contains(&name) {
         return Err(format!("unknown generator: {name}"));
     }
-    if input.is_some() && matches!(name, "bugcodes" | "bugcodes-h" | "nls") {
+    if input.is_some() && matches!(name, "bugcodes" | "bugcodes-h" | "nls" | "unorm") {
         return Err(format!(
             "{name} uses its declared checkout inputs; --input is unsupported"
         ));
@@ -127,6 +129,19 @@ pub fn generate(
                 })
             })
             .collect();
+    }
+    if name == "unorm" {
+        let ucd = root.join("vendor/unicode-ucd").join(unorm::UCD_VERSION);
+        let path = output
+            .map(Path::to_owned)
+            .unwrap_or_else(|| root.join("sdk/lib/rust/unorm-rust/src/tables.rs"));
+        return Ok(vec![Output {
+            path,
+            text: unorm::unorm_tables(
+                &read(&ucd.join("UnicodeData.txt"))?,
+                &read(&ucd.join("CompositionExclusions.txt"))?,
+            )?,
+        }]);
     }
     let (source, destination) = match name {
         "apisets-table" => (

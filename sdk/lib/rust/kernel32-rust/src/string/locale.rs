@@ -28320,29 +28320,17 @@ pub unsafe extern "system" fn FoldStringA(
         return 0;
     }
 
-    srclenW = MultiByteToWideChar(
-        CP_ACP,
-        if (dwFlags & MAP_COMPOSITE) != 0 { MB_COMPOSITE } else { 0 },
-        src,
-        srclen,
-        core::ptr::null_mut(),
-        0,
-    );
+    // A plain conversion, and the caller's flags passed through unchanged, as in current
+    // Wine. The old code pre-decomposed with MB_COMPOSITE and then forced MAP_FOLDCZONE and
+    // dropped MAP_PRECOMPOSED, a workaround from when MAP_FOLDCZONE was a small table; now
+    // that FoldStringW normalizes, it turned every FoldStringA into NFKC ("\x85" -> "...").
+    srclenW = MultiByteToWideChar(CP_ACP, 0, src, srclen, core::ptr::null_mut(), 0);
     srcW = HeapAlloc(GetProcessHeap(), 0, (srclenW as usize) * core::mem::size_of::<WCHAR>()) as LPWSTR;
 
     if srcW.is_null() {
         SetLastError(ERROR_NOT_ENOUGH_MEMORY);
     } else {
-        MultiByteToWideChar(
-            CP_ACP,
-            if (dwFlags & MAP_COMPOSITE) != 0 { MB_COMPOSITE } else { 0 },
-            src,
-            srclen,
-            srcW,
-            srclenW,
-        );
-
-        dwFlags = (dwFlags & !MAP_PRECOMPOSED) | MAP_FOLDCZONE;
+        MultiByteToWideChar(CP_ACP, 0, src, srclen, srcW, srclenW);
 
         ret = FoldStringW(dwFlags, srcW, srclenW, core::ptr::null_mut(), 0);
         if ret != 0 && dstlen != 0 {
@@ -28410,11 +28398,59 @@ pub unsafe extern "system" fn FoldStringW(
         return 0;
     }
 
-    ret = wine_fold_string(dwFlags as i32, src, srclen, dst, dstlen);
-    if ret == 0 {
-        SetLastError(ERROR_INSUFFICIENT_BUFFER);
+    // MAP_PRECOMPOSED / MAP_COMPOSITE / MAP_FOLDCZONE are Unicode normalization, as in
+    // Wine's fold_string: C, D, KC and KD (MAP_FOLDDIGITS first, if also given). The C
+    // left MAP_COMPOSITE and MAP_PRECOMPOSED as FIXMEs that copied the input through, and
+    // MAP_FOLDCZONE read a partial table. Ligature expansion and digit folding alone keep
+    // the table-driven path.
+    let norm = match dwFlags & (MAP_PRECOMPOSED | MAP_COMPOSITE | MAP_FOLDCZONE) {
+        0 => None,
+        MAP_PRECOMPOSED => Some(unorm_rust::Form::C),
+        MAP_COMPOSITE => Some(unorm_rust::Form::D),
+        f if f == MAP_FOLDCZONE || f == MAP_FOLDCZONE | MAP_PRECOMPOSED => Some(unorm_rust::Form::KC),
+        f if f == MAP_FOLDCZONE | MAP_COMPOSITE => Some(unorm_rust::Form::KD),
+        _ => {
+            SetLastError(ERROR_INVALID_FLAGS);
+            return 0;
+        }
+    };
+    let Some(form) = norm.filter(|_| dwFlags & MAP_EXPAND_LIGATURES == 0) else {
+        ret = wine_fold_string(dwFlags as i32, src, srclen, dst, dstlen);
+        if ret == 0 {
+            SetLastError(ERROR_INSUFFICIENT_BUFFER);
+        }
+        return ret;
+    };
+
+    let srclen = if srclen < 0 { lstrlenW(src) + 1 } else { srclen } as usize;
+    let mut input = core::slice::from_raw_parts(src, srclen);
+    let mut digits: *mut u16 = core::ptr::null_mut();
+    if dwFlags & MAP_FOLDDIGITS != 0 {
+        // Digit folding is one unit for one unit, so it can run first into a copy.
+        digits = HeapAlloc(GetProcessHeap(), 0, srclen * 2) as *mut u16;
+        if digits.is_null() {
+            SetLastError(ERROR_NOT_ENOUGH_MEMORY);
+            return 0;
+        }
+        wine_fold_string(MAP_FOLDDIGITS as i32, src, srclen as i32, digits, srclen as i32);
+        input = core::slice::from_raw_parts(digits, srclen);
     }
-    ret
+    let out: &mut [u16] = if dstlen == 0 { &mut [] } else { core::slice::from_raw_parts_mut(dst, dstlen as usize) };
+    let result = unorm_rust::normalize(form, input, out);
+    if !digits.is_null() {
+        HeapFree(GetProcessHeap(), 0, digits as *mut c_void);
+    }
+    match result {
+        Ok(n) => n as INT,
+        Err(unorm_rust::Error::BufferTooSmall(_)) => {
+            SetLastError(ERROR_INSUFFICIENT_BUFFER);
+            0
+        }
+        Err(unorm_rust::Error::InvalidChar(_)) => {
+            SetLastError(ERROR_NO_UNICODE_TRANSLATION);
+            0
+        }
+    }
 }
 #[no_mangle]
 pub unsafe extern "system" fn CompareStringW(
