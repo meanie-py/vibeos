@@ -774,17 +774,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   turns it into a livelock. Any real resume from sleep would hit it, so the power manager's
   sleep query does not send Windows' cancelling `SET_POWER(S0)` until this is fixed.
 
-- **`SetPixel` on the display surface writes black (open, found 2026-11-07, amd64).** On a
-  `CreateDC("DISPLAY")` DC, `GetPixel` reads the real colours (wallpaper `0xa56e3a`, taskbar
-  `0xc8d0d4`) and `SetPixel` returns the colour it was given, but the pixel then reads back
-  `0x000000`, and stays black after a restore. A 1x1 `PatBlt` with a solid brush round-trips
-  correctly on the same DC. Seen in `tools/payloads/sysfbprobe` runs (`20261107-182550-reYxfy`).
-  Not the display driver: suspect win32k's SetPixel colour translation to the device format.
+- **`SetPixel` on the display surface wrote black (FIXED 2026-11-08 by ccacb417164, verified
+  2026-11-22; found 2026-11-07, amd64).** `SetPixel` lends its colour to the DC's text brush
+  and clears `DIRTY_TEXT` so the blit keeps it. But `DC_vPrepareDCsForBlit` tested an invented
+  `0x08` (`DIRTY_BACKGROUND`) for text, so a DC with a dirty background re-realized the text
+  brush, black, over it. sysfbprobe now round-trips a `SetPixel` on a `CreateDC("DISPLAY")` DC
+  at every screen check, and passes (`20261122-125149-qUYyoT-smoke-amd64`).
 
-- **`SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_ALLCLASSES | DIGCF_PRESENT)` fails with
-  error 31 (open, found 2026-11-07, amd64).** Seen once from the Startup folder, before the
-  PlugPlay service was running, so it may only be that ordering; the CM_* calls failed the
-  same way until the probe waited for the service. Not rechecked with the service up.
+- **`SetupDiGetClassDevs(NULL, NULL, NULL, DIGCF_ALLCLASSES | DIGCF_PRESENT)` failed with
+  error 31 (NOT REPRODUCED with PlugPlay up, 2026-11-22; found 2026-11-07, amd64).** It was
+  seen once, from the Startup folder, before the PlugPlay service was running. sysfbprobe now
+  makes the call after waiting for the service and gets 40 present devices
+  (`20261122-125149-qUYyoT-smoke-amd64`). Whether Windows also fails the call before its
+  PnP service is up is unchecked.
 
 - **Fibers did not work on amd64 or arm64 (FIXED 2026-11-06, upstream-sync lane).** Both
   routines a fiber switch needs were unimplemented on 64-bit: amd64's `fiber.S` was an
