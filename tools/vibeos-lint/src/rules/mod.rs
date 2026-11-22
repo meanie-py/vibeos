@@ -25,6 +25,7 @@ pub mod shadowed_c_define;
 pub mod move_vs_nonoverlapping;
 pub mod assert_negated_vs_c;
 pub mod sizeof_vs_c;
+pub mod compare_const_vs_c;
 pub mod devobj_as_extension;
 pub mod shared_system_time;
 pub mod variadic_array_arg;
@@ -249,6 +250,7 @@ pub fn registry() -> Vec<Box<dyn Rule>> {
         Box::new(move_vs_nonoverlapping::MoveVsNonoverlapping),
         Box::new(assert_negated_vs_c::AssertNegatedVsC),
         Box::new(sizeof_vs_c::SizeofVsC),
+        Box::new(compare_const_vs_c::CompareConstVsC),
         Box::new(devobj_as_extension::DevobjAsExtension),
         Box::new(shared_system_time::SharedSystemTime),
         Box::new(store_on_failure::StoreOnFailure),

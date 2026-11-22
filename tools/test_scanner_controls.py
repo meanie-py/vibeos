@@ -3757,6 +3757,13 @@ UNCOVERED: dict[str, str] = {
         "NT_ASSERT must be flagged, the faithful one must not, and neither must another "
         "module's same-named C function."
     ),
+    "scan_compare_const_vs_c": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/compare_const_vs_c.rs: crypt32's CertAddStoreToCollection "
+        "comparing the store type with E_INVALIDARG must be flagged, the faithful "
+        "StoreTypeCollection body must not."
+    ),
     "scan_sizeof_vs_c": (
         "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
         "and known-good fixtures are the unit tests in "
