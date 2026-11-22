@@ -116,7 +116,40 @@ impl<'a> Out<'a> {
 }
 
 // ---------------------------------------------------------------------------------------
-// RFC 3454 tables (hardcoded subsets)
+// RFC 3454 tables
+
+// Wine's generated StringPrep tables (B.1/B.2 mapping; A.1 unassigned, C.* prohibited and
+// D.* bidi classes), shared with normaliz.dll: the same generated file, compiled into
+// both DLLs. Indexed by UTF-16 unit, so they cover the BMP; supplementary code points
+// fall back to `prohibited` below.
+#[allow(dead_code, non_upper_case_globals, unused_imports)]
+#[path = "../../../normaliz-rust/src/normaliz/nameprep/mod.rs"]
+mod nameprep_tables;
+
+const NP_UNASSIGNED: u16 = 0x1;
+const NP_PROHIBITED: u16 = 0x2;
+const NP_BIDI_RAL: u16 = 0x4;
+const NP_BIDI_L: u16 = 0x8;
+
+/// StringPrep class bits of a BMP unit (Wine's get_table_entry).
+fn np_type(ch: u16) -> u16 {
+    // SAFETY: the generated tables are never written; the indices are in range by
+    // construction of Wine's three-level table.
+    let t = unsafe { &*core::ptr::addr_of!(nameprep_tables::nameprep_char_type) };
+    let a = t[(ch >> 8) as usize] as usize;
+    let b = t[a + ((ch >> 4) & 0x0f) as usize] as usize;
+    t[b + (ch & 0x0f) as usize]
+}
+
+/// B.1/B.2 mapping of a BMP unit: [0,0,0] maps to itself, [ffff,ffff,ffff] to nothing,
+/// otherwise up to three units, zero-terminated.
+fn np_map(ch: u16) -> [u16; 3] {
+    // SAFETY: as np_type.
+    let m = unsafe { &*core::ptr::addr_of!(nameprep_tables::nameprep_mapping) };
+    let a = m[(ch >> 8) as usize] as usize;
+    let b = m[a + ((ch >> 4) & 0x0f) as usize] as usize + 3 * (ch & 0x0f) as usize;
+    [m[b], m[b + 1], m[b + 2]]
+}
 
 /// Table B.1: mapped to nothing.
 fn map_to_nothing(c: u32) -> bool {
@@ -175,43 +208,71 @@ fn nameprep(flags: u32, src: &[u16], lower: fn(u16) -> u16, out: &mut [u16; MAX_
         out[..n].copy_from_slice(src);
         len = n;
     } else {
-        let mut i = 0;
-        while i < n {
-            if src[i] == 0 && i != n - 1 {
+        // RFC 3491: map (B.1 to nothing, B.2 case fold), normalize NFKC, then prohibit.
+        let _ = lower; // B.2 replaces the old downcase approximation
+        let mut mapped = [0u16; MAX_NAME];
+        let mut mlen = 0usize;
+        for (i, &c) in src.iter().enumerate() {
+            if c == 0 && i != n - 1 {
                 return Err(IdnErr::InvalidName);
             }
-            let (cp, l) = get_utf16(&src[i..])?;
-            i += l;
-            if map_to_nothing(cp) {
+            let units: [u16; 3] = if is_dot(c as u32) {
+                [0x2e, 0, 0]
+            } else if (0xd800..0xe000).contains(&c) {
+                [c, 0, 0] // surrogates map to themselves; pairs are checked below
+            } else {
+                match np_map(c) {
+                    [0xffff, 0xffff, 0xffff] => continue, // B.1: mapped to nothing
+                    [0, _, _] => [c, 0, 0],
+                    m => m,
+                }
+            };
+            for &u in units.iter().take_while(|&&u| u != 0).chain(if c == 0 { Some(&0u16) } else { None }) {
+                if mlen == MAX_NAME {
+                    return Err(IdnErr::InvalidName);
+                }
+                mapped[mlen] = u;
+                mlen += 1;
+            }
+        }
+        len = match unorm_rust::normalize(unorm_rust::Form::KC, &mapped[..mlen], &mut out[..]) {
+            Ok(l) => l,
+            Err(_) => return Err(IdnErr::InvalidName),
+        };
+        let mask = NP_PROHIBITED | if flags & IDN_ALLOW_UNASSIGNED_ == 0 { NP_UNASSIGNED } else { 0 };
+        // Prohibited/unassigned per code point, and the RFC 3454 section 6 bidi rule per
+        // label: a label with any RandALCat character has no LCat one, and starts and
+        // ends with RandALCat.
+        let mut i = 0usize;
+        let mut label = 0usize;
+        let (mut ral, mut l_cat) = (false, false);
+        loop {
+            let at_end = i >= len || out[i] == 0x2e || (out[i] == 0 && i == len - 1);
+            if at_end {
+                if ral && (l_cat || np_type(out[label]) & NP_BIDI_RAL == 0 || np_type(out[i - 1]) & NP_BIDI_RAL == 0) {
+                    return Err(IdnErr::InvalidName);
+                }
+                if i >= len || out[i] == 0 {
+                    break;
+                }
+                i += 1;
+                label = i;
+                ral = false;
+                l_cat = false;
                 continue;
             }
-            // Fold to at most two code points.
-            let mut mapped = [cp, 0];
-            let mut cnt = 1;
-            if is_dot(cp) {
-                mapped[0] = 0x2e;
-            } else if cp == 0xdf {
-                mapped = [0x73, 0x73];
-                cnt = 2;
-            } else if cp == 0x130 {
-                mapped = [0x69, 0x307];
-                cnt = 2;
-            } else if cp < 0x10000 {
-                mapped[0] = lower(cp as u16) as u32;
-            }
-            for k in 0..cnt {
-                let m = mapped[k];
-                if prohibited(m) && !(m == 0 && i == n) {
+            let (cp, l) = get_utf16(&out[i..len])?;
+            if cp < 0x10000 {
+                let t = np_type(cp as u16);
+                if t & mask != 0 {
                     return Err(IdnErr::InvalidName);
                 }
-                let mut u = [0u16; 2];
-                let ul = encode_utf16(m, &mut u);
-                if len + ul > MAX_NAME {
-                    return Err(IdnErr::InvalidName);
-                }
-                out[len..len + ul].copy_from_slice(&u[..ul]);
-                len += ul;
+                ral |= t & NP_BIDI_RAL != 0;
+                l_cat |= t & NP_BIDI_L != 0;
+            } else if prohibited(cp) {
+                return Err(IdnErr::InvalidName);
             }
+            i += l;
         }
     }
 
@@ -334,6 +395,11 @@ fn puny_encode(cps: &[u32], res: &mut [u16; MAX_NAME], out: &mut usize) -> R<()>
 fn invalid_label(flags: u32, cps: &[u32]) -> bool {
     for &c in cps {
         if prohibited(c) {
+            return true;
+        }
+        // A.1 unassigned code points decode only with IDN_ALLOW_UNASSIGNED, as nameprep
+        // would reject them (Wine's locale test: "xn--7va" is U+0380).
+        if c < 0x10000 && flags & IDN_ALLOW_UNASSIGNED_ == 0 && np_type(c as u16) & NP_UNASSIGNED != 0 {
             return true;
         }
         if matches!(c, 0x2260 | 0x226e | 0x226f) && flags & IDN_USE_STD3_ASCII_RULES_ != 0 {
