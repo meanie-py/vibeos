@@ -1571,7 +1571,7 @@ dependencies = [
 name = "crypt32-cargo"
 version = "0.1.0"
 dependencies = [
- "panic-lean",
+ "panic-common",
  "reactos-link",
 ]
 
