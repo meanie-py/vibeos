@@ -669,9 +669,13 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   umpnpmgr's DeviceInstallThread was installing devices (`ACPI\BRCM5D12` failed, newdev error
   259), yet the service still read state 2 after 300 s. umpnpmgr's `ServiceMain` reports
   RUNNING unconditionally after creating its three threads, so it stalled between checkpoint
-  1 and that last `SetServiceStatus`. Not seen in QEMU (arm64 probe: RUNNING after 1 s). Next:
-  sysfbprobe now prints the checkpoint, which names the thread start it stalled before; boot
-  it again until the stall recurs.
+  1 and that last `SetServiceStatus`. Since DeviceInstallThread was already running, its
+  `CreateThread` had returned, so the likelier stall is the final `SetServiceStatus(RUNNING)`
+  or the SCM's handling of it: expect checkpoint 3. Not seen in QEMU (arm64 probe: RUNNING
+  after 1 s). 2026-11-21: seven more `pi5 boot`s of one image (`20261121-171521-CbZh5c` through
+  `20261121-174647-oTgu0G`) all had PlugPlay RUNNING within 1 s, so the rate so far is 1 in 9.
+  sysfbprobe prints the checkpoint (state 4 checkpoint 0 on those boots); the next stall names
+  where it stopped.
 
 - **amd64: long boots wedged once osk.exe had leaked the GDI handle table (FIXED 2026-11-07,
   graviton lane).** The stock i386 `osk.exe` gained thousands of pens (to 8,300+ in one Chrome
