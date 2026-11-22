@@ -602,6 +602,16 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **Installed system booted with no services: services.exe exited on the first boot after setup
+  (FIXED 2026-11-22, msvcrt-homebrew lane).** `ScmCreateLastKnownGoodControlSet` copies the
+  current control set with `RegCopyTreeW`, which failed with 998 (ERROR_NOACCESS) for every
+  key with a subkey, and services.exe logged `CreateLastKnownGood failed: 998` and exited, so
+  PlugPlay, RPC services and the rest never started. Cause: `probe_user_buffer` checked the
+  alignment of a ZERO-length buffer (NtCreateKey's empty class), which `ProbeForRead` never
+  does (field manual, "Restoring a dropped probe, do not TIGHTEN it"). Found by the install
+  smoke's new persist stage; `install-smoke` had passed throughout because it only waited for
+  Explorer. Reproduced and graded on the livecd by `--payload regcopyprobe`.
+
 - **amd64-bios: boot went silent after netstack's TDI self-test timed out (open, 1 in 7,
   found 2026-11-08, fex lane).** In a full gate (`20261108-020815-xRELnn`, two CPUs, NVMe),
   `smoke:amd64-bios` logged `TDI op timed out - IRP still pending`, `CONNECT FAILED

@@ -8466,6 +8466,14 @@ appear *after* a validate-first conversion that was supposed to be a pure safety
     existed. Use `probe_user_buffer_write`, which does ProbeForWrite's one-byte-per-page
     read-and-write-back through the fault-protected copy. `scan_dropped_probes` reports the
     range-only form as `WEAK` wherever the file's commented C write-probes the same pointer.
+  * **A zero-length buffer probed at all.** `ProbeForRead`/`ProbeForWrite` check nothing,
+    alignment included, unless `Length != 0` (`ntoskrnl/ex/exintrin.c`). `probe_user_buffer`
+    checked alignment first, so `NtCreateKey`'s empty class (advapi32's `RegpCopyTree` points
+    it at `KeyNode + ClassOffset`, and a classless key reports `ClassOffset` 0xFFFFFFFF, an
+    odd address) failed with `STATUS_DATATYPE_MISALIGNMENT`, i.e. ERROR_NOACCESS (998). Every
+    `RegCopyTreeW` of a key with a subkey failed, and services.exe exited on the installed
+    system's first boot after setup, which then ran with no services at all. The livecd never
+    copies a control set; `tools/payloads/regcopyprobe` runs that copy there in 3 minutes.
 
   And one semantic trap next door: **`probe_write_handle` writes NULL.** That is
   `ProbeAndZeroHandle`'s contract. `ProbeForWriteHandle` PRESERVES the value, and zeroing
