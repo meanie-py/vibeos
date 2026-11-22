@@ -18,7 +18,8 @@ artifact store serves other bodies without cargo ever running in the lane, and i
 diagnostics. Fixed:
 - 38e8ab37488: the census reads the cell dirs. `--recheck-store-hits` re-derives
   store-served bodies with `cargo check`, using the action's exact argv/RUSTFLAGS
-  (target `build-<arch>/census-check-target`; hard error on an unreadable ref/action).
+  (target `sdk/lib/rust/target/census-check-<arch>`, outside every dir the gate reads; hard
+  error on an unreadable ref/action; the census prints a GAP line counting those units).
 - a7da0e4b5c5: rust_ub_deny reads the same dirs from one shared list,
   `tools/vibeos-lint/src/binary/cargo_unit_dirs.json`.
 - c85b740529a + 2d8387398a7: the UB tier that surfaced, freeldr-rust's 145
