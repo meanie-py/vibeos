@@ -24,7 +24,7 @@ def run(*args, cwd=None):
 def test_all_committed_outputs_match():
     result = run("--all", "--check")
     assert result.returncode == 0, result.stderr
-    assert "11 generated outputs match" in result.stderr
+    assert "12 generated outputs match" in result.stderr
 
 
 def test_write_then_check_and_missing_or_stale_output(tmp_path):
