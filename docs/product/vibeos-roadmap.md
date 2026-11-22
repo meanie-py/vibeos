@@ -731,10 +731,15 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   kernel), idle ~2%; the stalled boots' CPU sat in win32k.sys `DIB_DoRop` (resolved from the
   new `[MODBASE]` lines). On that load 3 of 8 Chrome boots missed the sweep's deadline. The
   Chrome payload now boots QUIET (`quiet: true`; winlogon skips its test ladder): 3/3 pass,
-  40 min against 93-98, no starvation boosts (run 20261122-044146-4XMySS). Still open: why osk
-  is that busy. Its main thread samples in comctl32's `BUTTON_DrawTextCallback` and win32k
-  syscalls, but `paintprobe` (30 plain buttons, native and WOW64) gets no repaints at all,
-  so it is something osk-specific (its comctl32 v6 buttons, a timer, or its hook). Separately,
+  40 min against 93-98, no starvation boosts (run 20261122-044146-4XMySS). Why osk and
+  magnify are that busy (`idlewatch` payload, untouched desktop): both are timer-driven by
+  design. osk's dialog thread wakes 37/s at ~4 ms a wake (x86 frames: blocked in
+  `NtUserGetMessage` under `DialogBoxParamW` in 7 of 8 samples), magnify's 55/s at 3-4 ms of
+  kernel blitting; software GDI under TCG makes each tick cost milliseconds. Not a
+  correctness bug. Part of osk's load was a WOW64 gap, fixed 2026-11-22: every guest
+  `WM_COPYDATA` send failed ("divergent lParam payload ... no marshaller", 61 in two idle
+  minutes, taskmgr's 2 s refresh); with the send-path marshaller osk's CPU fell from 144 s to
+  89 s over a comparable boot and idle rose from 276 s to 364 s. Separately,
   multi-process Chrome trips the §9.56 `[RQ5A]` drain-insert guard a few times per boot, always
   a `KiSetPriorityThread` Ready-branch requeue (stamp 9002) at priority 14 (the ERESOURCE owner
   boost) whose stale links form a short ring reaching no PRCB list head (2026-11-21: 2 hits in 1 of

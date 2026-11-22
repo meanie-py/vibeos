@@ -14,9 +14,13 @@
 >    image, and a `--serial` log older than the tree's kernel unless `--image` is passed.
 > 2. RQ5A (smp-bringup's §9.56 guard): settle false positive vs. real double-link with a
 >    pre-`RemoveEntryList` neighbour check at the 9002 site; hand them a tested diff.
-> 3. osk.exe uses 27% of a one-vCPU boot with nobody typing (registry entry). Not a generic
->    paint loop (`paintprobe` is clean); find what osk does: sample its threads with the
->    sweep's end-of-run report on a NON-quiet payload (the Chrome payload is quiet now).
+> 3. (done 2026-11-22) osk/magnify load: timer polling by design, made costly by software
+>    GDI under TCG; the Chrome payload boots QUIET. Found and fixed on the way: WOW64
+>    `WM_COPYDATA` sends, `Wow64GetThreadContext` on another thread. Tools: `idlewatch`
+>    payload, x86 frames in the sweep's thread dump, `[MODBASE]` + `sym` for driver addresses.
+>    OWED: the generated WOW64 struct marshallers (tools/vibeos-codegen `marshal`) SIGN-extend
+>    pointer and ULONG_PTR fields (`WowCbSx`), which is right for handles but turns a
+>    large-address-aware guest's buffer at or above 2 GiB into a kernel-half address.
 > 4. The sandbox quest (the user asked to dip a toe in; not started).
 > Loading over the network is done (Chrome rung 2, `34e17dfff6e`).
 
