@@ -626,28 +626,47 @@ extends it from the boot spine to every fully-Rust module.
      (`wdmaud_drv_rust`) plus mmixer-rust's user-mode variant, a static library
      (`engine:crate:mmixer-rust:user:FALSE`). The body's name match missed it because the
      target is dotted. The match now also takes `<target with . as _>_rust`.
-   - **RESUME HERE (2026-11-08, fleet pause).**
-     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer, filebrowser, dbghelp, libtirpc, rapps.com, libtiff, glu32, ufat, ufatx, ucdfs, svchost, win32u, wow64cpu and wdmaud.drv followed, ratchet 13.)*
-     - The cmake_linked_modules ratchet is at **31**. This week's 24 cells are queued in the
-       integrator's combined batch 169+170 on `cells-dotted` 0fa7e73bb5c, which includes
-       cells-fusion and cells-exports: the five export holds, fusion ×3, rpcrt4, uniata and
-       the 14 dotted targets. First check that 0fa7e73bb5c is an ancestor of origin/master.
-       If it bounced, the integrator's message names the gate dir.
-     - **Next, by size:**
-       - msvcrt: its custom cargo command shape;
-       - setuplib (nativedll, not built in this configuration);
-       - the CRTs.
-       - Run `tools/codegen cargo-cell <target>` per module for its current refusal.
-     - **Owed (2026-11-21):** audit the committed Rust-body cells against cmake for the
-       explorer class (an unreferenced shim object that cmake loads and the archive
-       drops). pe_equiv proved each at conversion, so a hit would mean a shim was added
-       after its conversion. Re-run `--check` on each body cell to confirm.
+   - **RESUME HERE (2026-11-22, Sunday park).** The cmake_linked_modules ratchet is at
+     **13**, from 31 on 11-21. Eighteen cells landed 11-21/22 (shdocvw, shlwapi, browseui,
+     rshell, explorer, filebrowser, dbghelp, libtirpc, rapps.com, libtiff, glu32, ufat,
+     ufatx, ucdfs, svchost, win32u, wow64cpu, wdmaud.drv), each EQUIVALENT against cmake. The
+     entries above record each generator change. vibeos-gicv3's build outputs are pruned at
+     this park, so the next session starts cold: `./vibeos-cli build --arch <a>` ×3 first.
+     - **The 13 left**, with their refusals (`tools/codegen cargo-cell <t>` for the current
+       one):
+       - msvcrt, ucrtbase: a custom `cargo build` command that _custom_body doesn't read.
+       - crtdll, msvcrt20, msvcrt40: `link_msvcrt_rust_cohab`, a --whole-archive of
+         another crate's cmake-built archive.
+       - kernel32_vista: links Rust archives built in the parent CMakeLists
+         (KERNEL32_VISTA_RUST_LIB, KERNEL32_SHARED_RUST_LIB), not via rust_staticlib_variant.
+         It is on the boot path.
+       - installfreeldr (fat.c from no source dir); lfbbvid (a target made by a shared
+         function in a loop).
+       - Not built in this configuration, so there is nothing to prove against: setuplib,
+         setuplib_probe, audio_test, fdebug, skiplist_test.
+     - **Done 2026-11-22:** the explorer-class audit (conformance, 5ad25d4ae81). Of 87
+       committed body cells, two dropped an unreferenced shim (netapi32 netdfs_c.o, pcix
+       usage.o) on all 3 arches. Both now link whole. Method: a member counts as loaded
+       iff one of its defined globals is in the linked PE's symbol table.
      - **Owed:**
-       - Audit earlier waves for a cell proven against a stale baseline (see the 11-08
-         export-holds entry; the risk is low).
+       - **`prune --only` per-worktree lock.** tests/qemu/cli/maintenance.py's single
+         global flock lets ANY CLI command block every apply, so an idle lane cannot be
+         pruned while the fleet works. A 45-minute wait never got the lock on 11-22. Fix:
+         commands also hold a per-worktree shared lock, and `--only X` takes X's
+         exclusively. Roll it out only with the fleet parked, since an older CLI copy holds
+         only the global lock.
+       - **`/tmp/vibeos-cli` retention in prune.** It reached 37G (5829 runs, all logs).
+         It was cleared by hand on 11-22 (older than 3 days), so add an age-based retention
+         to prune.
+       - **Artifact store publishes rustc diagnostics** (warnings-burndown's option A). A
+         store-served body never runs cargo in the lane, so its warnings were invisible to
+         the census and to rust_ub_deny. The census rechecks them for now (38e8ab37488).
+         Adding `diagnostics.jsonl` per action changes executor_source.sha256, so every
+         action key misses once: do it only in a planned cold-rebuild window, like the next
+         park's cold start.
+       - Audit earlier waves for a cell proven against a stale baseline (11-08; low risk).
        - mmc_new's `libmmc_uuids.a` (baselined).
-       - The git prune deferred to this fleet pause. control-plane runs it once every lane
-         reports settled.
+       - git prune: loose objects warn again (gc.log). Run it with the fleet parked.
      - **Lesson from batch 169:** a harness that PARSES a module's CMakeLists text
        (schannel-tls-difftest read mbedtls's `list(APPEND SOURCE`) is invisible to pe_equiv.
        Grep `sdk/lib/rust/*/build.rs` and tools/ for the module's CMakeLists path before
