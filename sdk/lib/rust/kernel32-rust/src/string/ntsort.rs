@@ -611,6 +611,149 @@ pub unsafe fn nt_compare_string(lcid: LCID, flags: DWORD, s1: &[u16], s2: &[u16]
     }
 }
 
+/// Writes a sort key, counting every byte but storing only the first `limit`; records
+/// where each section separator ends so a short buffer can be cut at one.
+struct KeyWriter {
+    dst: *mut u8,
+    limit: usize,
+    n: usize,
+    seps: [usize; 4],
+    n_seps: usize,
+}
+
+impl KeyWriter {
+    #[inline]
+    unsafe fn put(&mut self, b: u8) {
+        if self.n < self.limit {
+            *self.dst.add(self.n) = b;
+        }
+        self.n += 1;
+    }
+    unsafe fn sep(&mut self) {
+        self.put(SORTKEY_SEPARATOR);
+        if self.n_seps < self.seps.len() {
+            self.seps[self.n_seps] = self.n;
+            self.n_seps += 1;
+        }
+    }
+}
+
+const SORTKEY_SEPARATOR: u8 = 0x01;
+const SORTKEY_TERMINATOR: u8 = 0x00;
+/// The default diacritic and case weight; trailing runs of it are left out of a key, so
+/// "a" and "a" + nothing compare as equal prefixes.
+const W_BASE: u8 = 2;
+
+unsafe fn write_sort_key(loc: &Locale, flags: DWORD, s: &[u16], w: &mut KeyWriter) {
+    // Primary: (SM, AW) per element, high byte first so memcmp is the numeric order.
+    let mut count = 0usize;
+    let mut last_dw = 0usize; // elements up to the last non-base diacritic
+    let mut last_cw = 0usize;
+    let mut it = Walker::new(loc, s, flags, true);
+    while let Some((p, d, c)) = it.next_weight() {
+        w.put((p >> 8) as u8);
+        w.put(p as u8);
+        count += 1;
+        if d != W_BASE {
+            last_dw = count;
+        }
+        if c != W_BASE {
+            last_cw = count;
+        }
+    }
+    w.sep();
+
+    // Diacritic: one byte per element, trailing base weights dropped; back to front for
+    // the reverse-diacritic (French) locales, so the LAST difference decides, as in
+    // nt_compare_string. LINGUISTIC_IGNOREDIACRITIC/NORM_IGNORENONSPACE leave it empty.
+    if flags & (NORM_IGNORENONSPACE | LINGUISTIC_IGNOREDIACRITIC) as DWORD == 0 {
+        if loc.reverse {
+            // Reversed, the trailing base run is the run at the START of the string.
+            let mut first_dw = count;
+            let mut it = Walker::new(loc, s, flags, true);
+            let mut k = 0usize;
+            while let Some((_, d, _)) = it.next_weight() {
+                if d != W_BASE && k < first_dw {
+                    first_dw = k;
+                }
+                k += 1;
+            }
+            let mut idx = count;
+            while idx > first_dw {
+                idx -= 1;
+                let mut it = Walker::new(loc, s, flags, true);
+                let mut k = 0usize;
+                while let Some((_, d, _)) = it.next_weight() {
+                    if k == idx {
+                        w.put(d);
+                        break;
+                    }
+                    k += 1;
+                }
+            }
+        } else {
+            let mut it = Walker::new(loc, s, flags, true);
+            let mut k = 0usize;
+            while let Some((_, d, _)) = it.next_weight() {
+                if k >= last_dw {
+                    break;
+                }
+                w.put(d);
+                k += 1;
+            }
+        }
+    }
+    w.sep();
+
+    // Case (already masked by the IGNORE* flags), trailing base weights dropped.
+    let mut it = Walker::new(loc, s, flags, true);
+    let mut k = 0usize;
+    while let Some((_, _, c)) = it.next_weight() {
+        if k >= last_cw {
+            break;
+        }
+        w.put(c);
+        k += 1;
+    }
+    w.sep();
+    // The East Asian extra-weight level: not modelled (see the module notes), empty.
+    w.sep();
+
+    // Word-sort punctuation: position (big-endian, so earlier sorts first) then weight.
+    let mut it = Walker::new(loc, s, flags, false);
+    while let Some((pos, wt)) = it.next_special() {
+        w.put((pos >> 8) as u8);
+        w.put(pos as u8);
+        w.put((wt >> 8) as u8);
+        w.put(wt as u8);
+    }
+    w.put(SORTKEY_TERMINATOR);
+}
+
+/// LCMapString(LCMAP_SORTKEY) from the same weights CompareString uses, so comparing two
+/// keys byte-wise orders the strings exactly as nt_compare_string does. `dst`/`dstlen` are
+/// bytes; dstlen == 0 asks for the size. A buffer too small for the whole key gets the
+/// sections that fit, cut just after a separator, and Err (ERROR_INSUFFICIENT_BUFFER), as
+/// Windows fills it. None when the tables are not available.
+pub unsafe fn nt_sort_key(lcid: LCID, flags: DWORD, s: &[u16], dst: *mut u8, dstlen: usize) -> Option<Result<usize, ()>> {
+    let t = tables()?;
+    let loc = Locale::new(t, lcid);
+    let mut measure = KeyWriter { dst, limit: 0, n: 0, seps: [0; 4], n_seps: 0 };
+    write_sort_key(&loc, flags, s, &mut measure);
+    let size = measure.n;
+    if dstlen == 0 {
+        return Some(Ok(size));
+    }
+    let limit = if size <= dstlen {
+        size
+    } else {
+        measure.seps[..measure.n_seps].iter().copied().filter(|&e| e <= dstlen).max().unwrap_or(0)
+    };
+    let mut out = KeyWriter { dst, limit, n: 0, seps: [0; 4], n_seps: 0 };
+    write_sort_key(&loc, flags, s, &mut out);
+    Some(if size <= dstlen { Ok(size) } else { Err(()) })
+}
+
 /// What LCMapString(NORM_IGNORENONSPACE) does with one UTF-16 unit.
 pub enum Nonspace {
     Keep,

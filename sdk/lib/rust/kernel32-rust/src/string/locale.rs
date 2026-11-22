@@ -28117,6 +28117,21 @@ pub unsafe extern "system" fn LCMapStringEx(
             srclen = strlenW(src) as i32;
         }
 
+        // NT sort keys from sortkey.nls/sorttbls.nls, the weights CompareString uses
+        // (string/ntsort.rs), so a key compares exactly as CompareString orders. The old
+        // Wine table below stays only for when those files cannot be loaded.
+        let lcid = if locale.is_null() { 0x0400 } else { LocaleNameToLCID(locale, 0) };
+        let units = core::slice::from_raw_parts(src, srclen as usize);
+        let dst_bytes = if dstlen == 0 { core::ptr::null_mut() } else { dst as *mut u8 };
+        match crate::string::ntsort::nt_sort_key(ConvertDefaultLocale(lcid), flags, units, dst_bytes, dstlen as usize) {
+            Some(Ok(n)) => return n as i32,
+            Some(Err(())) => {
+                SetLastError(ERROR_INSUFFICIENT_BUFFER);
+                return 0;
+            }
+            None => {}
+        }
+
         ret = wine_get_sortkey(flags as i32, src, srclen, dst as *mut i8, dstlen);
         if ret == 0 {
             SetLastError(ERROR_INSUFFICIENT_BUFFER);
@@ -28137,6 +28152,7 @@ pub unsafe extern "system" fn LCMapStringEx(
 extern "system" {
     fn IsValidLocaleName(lpLocaleName: LPCWSTR) -> BOOL;
     fn LCIDToLocaleName(Locale: LCID, lpName: LPWSTR, cchName: INT, dwFlags: DWORD) -> INT;
+    fn LocaleNameToLCID(lpName: LPCWSTR, dwFlags: DWORD) -> LCID;
 }
 
 // "tr-*" or "az-*", any case (the test passes "TR-TR" and "az-Latn-az").
