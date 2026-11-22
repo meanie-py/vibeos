@@ -9,7 +9,26 @@ the genuine-signal warnings are audited and fixed, and — critically — the fi
 **stay** fixed (no blanket re-suppression). Incremental, per-crate, each cluster gated ×3
 and landed on its own so conflicts stay localized and every step is revertible.
 
-## RESUME HERE (updated 2026-11-22)
+## RESUME HERE (updated 2026-11-22 evening — PARKED for the week, all landed or in batch 203)
+
+**Where it stopped.** Everything is committed. a94389ddd3c (abi_cast! retired + this doc) is
+gating in integrator batch 203; all earlier work has landed (last: d6de9cac1d2). Full
+3-arch census on warm builds at e43339124f6: **1426 sites, UB 0, LOGIC 233, NOISE 1193,
+UNCLASSIFIED 0** (GAP: 60 store-served units seen only via recheck). function_casts_as_integer
+is 0 (from 159), measured on the nightly i386 kernel units.
+**Next on resume** (build dirs will have been pruned, so start with a cold build of all three
+arches, then
+`python3 tools/rust_warning_census.py --recheck-store-hits build-i386 build-amd64 build-arm64`):
+1. clashing_extern_declarations 67: 64 in freeldr-rust (winldr.rs 8, setupldr.rs 4, ...),
+   2 cabinet, 1 ks. Two declarations of one symbol disagree, and the cast work found one is
+   usually WRONG. Check both against the C header, keep the right one, and import it
+   instead of re-declaring. The list is in
+   `~/vibeos-rust-staging/warnings-burndown/clashing-extern-2026-11-22.txt`.
+2. Then unexpected_cfgs 71, unused_assignments 62, forgetting_copy_types 11 (iomgr),
+   unreachable_code 11, unpredictable_function_pointer_comparisons 6.
+Scratch tools from this weekend (span-exact rewrite, compile-probe driver) are in
+`~/vibeos-rust-staging/warnings-burndown/` (not in the repo, because new Python tooling
+should be Rust).
 
 **The census was reading only part of the tree, and so was the UB deny gate.** Both read
 only build-<arch> fingerprints. Bodies a cell builds privately compile in
