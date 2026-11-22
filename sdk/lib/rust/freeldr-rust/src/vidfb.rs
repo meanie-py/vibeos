@@ -131,7 +131,7 @@ pub unsafe extern "C" fn VidFbInitializeVideo(
         *pFbData = core::ptr::null_mut();
     }
 
-    core::ptr::write_bytes(&mut framebufInfo as *mut FRAMEBUFFER_INFO, 0u8, 1);
+    core::ptr::write_bytes(&raw mut framebufInfo as *mut FRAMEBUFFER_INFO, 0u8, 1);
 
     if (ScreenWidth < 1) || (ScreenHeight < 1) {
         ERR!("Invalid framebuffer dimensions\n");

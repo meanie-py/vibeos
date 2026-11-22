@@ -147,6 +147,22 @@ pub unsafe extern "system" fn RtlpWaitForCriticalSection(CriticalSection: PRTL_C
 
         if Status == STATUS_TIMEOUT {
             if LastChance != 0 {
+                // critical.c: `ERROR_DBGBREAK("Deadlock: 0x%p\n", CriticalSection)`, which the
+                // port had dropped -- so a STATUS_POSSIBLE_DEADLOCK said which lock but never
+                // who held it. Divergence from the C: the line also names the owning and the
+                // waiting thread (ClientId.UniqueThread values), which is what a deadlock hunt
+                // needs first (dhcpcsvc's ApiCriticalSection under --no-net had neither). The
+                // DbgBreakPoint half of ERROR_DBGBREAK is still not taken: without a debugger
+                // it raises its own exception ahead of this one.
+                ntkrnl_sys::driver_ddk::DbgPrint(
+                    b"Deadlock: 0x%p (owner thread 0x%p, waiter thread 0x%p, LockCount %ld, RecursionCount %ld)\n\0"
+                        .as_ptr() as *const i8,
+                    CriticalSection,
+                    (*CriticalSection).OwningThread,
+                    (*NtCurrentTeb()).ClientId.UniqueThread,
+                    (*CriticalSection).LockCount,
+                    (*CriticalSection).RecursionCount,
+                );
                 ExceptionRecord.ExceptionCode = STATUS_POSSIBLE_DEADLOCK;
                 ExceptionRecord.ExceptionFlags = 0;
                 ExceptionRecord.ExceptionRecord = core::ptr::null_mut();

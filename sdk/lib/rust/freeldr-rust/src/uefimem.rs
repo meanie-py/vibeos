@@ -102,7 +102,7 @@ unsafe fn PUEFI_LoadMemoryMap(
         ((*(*GlobalSystemTable).BootServices).AllocatePool).unwrap()(
             EfiLoaderData,
             AllocationSize,
-            &mut EfiMemoryMap as *mut _ as *mut *mut VOID);
+            &raw mut EfiMemoryMap as *mut _ as *mut *mut VOID);
         Status = ((*(*GlobalSystemTable).BootServices).GetMemoryMap).unwrap()(
             LocMapSize,
             EfiMemoryMap,

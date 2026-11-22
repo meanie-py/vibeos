@@ -151,7 +151,7 @@ pub unsafe extern "C" fn UiInitialize(ShowUi: u8) -> u8 {
         SettingText[0] = 0;
     }
     UiDisplayMode = MachVideoSetDisplayMode(SettingText.as_ptr() as PCSTR, 1u8);
-    MachVideoGetDisplaySize(&mut UiScreenWidth, &mut UiScreenHeight, &mut Depth);
+    MachVideoGetDisplaySize(&raw mut UiScreenWidth, &raw mut UiScreenHeight, &mut Depth);
 
     if SectionId != 0 && IniReadSettingByName(SectionId, b"MinimalUI\0".as_ptr() as PCSTR, SettingText.as_mut_ptr(), core::mem::size_of_val(&SettingText)) != 0 {
         UiMinimal = if _stricmp(SettingText.as_ptr() as PCSTR, b"Yes\0".as_ptr() as PCSTR) == 0 { 1u8 } else { 0u8 };
@@ -192,27 +192,27 @@ pub unsafe extern "C" fn UiInitialize(ShowUi: u8) -> u8 {
         }
 
         let Settings: [Setting; 21] = [
-            Setting { SettingName: b"TitleText\0".as_ptr() as PCSTR, SettingVar: &mut UiTitleBoxTitleText as *mut _ as *mut core::ffi::c_void, SettingSize: core::mem::size_of_val(&UiTitleBoxTitleText), SettingType: 0 },
-            Setting { SettingName: b"TimeText\0".as_ptr() as PCSTR, SettingVar: &mut UiTimeText as *mut _ as *mut core::ffi::c_void, SettingSize: core::mem::size_of_val(&UiTimeText), SettingType: 0 },
-            Setting { SettingName: b"ShowTime\0".as_ptr() as PCSTR, SettingVar: &mut UiShowTime as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 1 },
-            Setting { SettingName: b"MenuBox\0".as_ptr() as PCSTR, SettingVar: &mut UiMenuBox as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 1 },
-            Setting { SettingName: b"CenterMenu\0".as_ptr() as PCSTR, SettingVar: &mut UiCenterMenu as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 1 },
-            Setting { SettingName: b"SpecialEffects\0".as_ptr() as PCSTR, SettingVar: &mut UiUseSpecialEffects as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 1 },
-            Setting { SettingName: b"BackdropColor\0".as_ptr() as PCSTR, SettingVar: &mut UiBackdropBgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
-            Setting { SettingName: b"BackdropTextColor\0".as_ptr() as PCSTR, SettingVar: &mut UiBackdropFgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
-            Setting { SettingName: b"StatusBarColor\0".as_ptr() as PCSTR, SettingVar: &mut UiStatusBarBgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
-            Setting { SettingName: b"StatusBarTextColor\0".as_ptr() as PCSTR, SettingVar: &mut UiStatusBarFgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
-            Setting { SettingName: b"TitleBoxColor\0".as_ptr() as PCSTR, SettingVar: &mut UiTitleBoxBgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
-            Setting { SettingName: b"TitleBoxTextColor\0".as_ptr() as PCSTR, SettingVar: &mut UiTitleBoxFgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
-            Setting { SettingName: b"MessageBoxColor\0".as_ptr() as PCSTR, SettingVar: &mut UiMessageBoxBgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
-            Setting { SettingName: b"MessageBoxTextColor\0".as_ptr() as PCSTR, SettingVar: &mut UiMessageBoxFgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
-            Setting { SettingName: b"MenuColor\0".as_ptr() as PCSTR, SettingVar: &mut UiMenuBgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
-            Setting { SettingName: b"MenuTextColor\0".as_ptr() as PCSTR, SettingVar: &mut UiMenuFgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
-            Setting { SettingName: b"TextColor\0".as_ptr() as PCSTR, SettingVar: &mut UiTextColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
-            Setting { SettingName: b"SelectedColor\0".as_ptr() as PCSTR, SettingVar: &mut UiSelectedTextBgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
-            Setting { SettingName: b"SelectedTextColor\0".as_ptr() as PCSTR, SettingVar: &mut UiSelectedTextColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
-            Setting { SettingName: b"EditBoxColor\0".as_ptr() as PCSTR, SettingVar: &mut UiEditBoxBgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
-            Setting { SettingName: b"EditBoxTextColor\0".as_ptr() as PCSTR, SettingVar: &mut UiEditBoxTextColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"TitleText\0".as_ptr() as PCSTR, SettingVar: &raw mut UiTitleBoxTitleText as *mut _ as *mut core::ffi::c_void, SettingSize: core::mem::size_of_val(&*&raw const UiTitleBoxTitleText), SettingType: 0 },
+            Setting { SettingName: b"TimeText\0".as_ptr() as PCSTR, SettingVar: &raw mut UiTimeText as *mut _ as *mut core::ffi::c_void, SettingSize: core::mem::size_of_val(&*&raw const UiTimeText), SettingType: 0 },
+            Setting { SettingName: b"ShowTime\0".as_ptr() as PCSTR, SettingVar: &raw mut UiShowTime as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 1 },
+            Setting { SettingName: b"MenuBox\0".as_ptr() as PCSTR, SettingVar: &raw mut UiMenuBox as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 1 },
+            Setting { SettingName: b"CenterMenu\0".as_ptr() as PCSTR, SettingVar: &raw mut UiCenterMenu as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 1 },
+            Setting { SettingName: b"SpecialEffects\0".as_ptr() as PCSTR, SettingVar: &raw mut UiUseSpecialEffects as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 1 },
+            Setting { SettingName: b"BackdropColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiBackdropBgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"BackdropTextColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiBackdropFgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"StatusBarColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiStatusBarBgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"StatusBarTextColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiStatusBarFgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"TitleBoxColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiTitleBoxBgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"TitleBoxTextColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiTitleBoxFgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"MessageBoxColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiMessageBoxBgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"MessageBoxTextColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiMessageBoxFgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"MenuColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiMenuBgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"MenuTextColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiMenuFgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"TextColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiTextColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"SelectedColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiSelectedTextBgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"SelectedTextColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiSelectedTextColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"EditBoxColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiEditBoxBgColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
+            Setting { SettingName: b"EditBoxTextColor\0".as_ptr() as PCSTR, SettingVar: &raw mut UiEditBoxTextColor as *mut _ as *mut core::ffi::c_void, SettingSize: 0, SettingType: 2 },
         ];
 
         for i in 0..21 {

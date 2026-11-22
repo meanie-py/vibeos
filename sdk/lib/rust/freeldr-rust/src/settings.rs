@@ -56,14 +56,14 @@ unsafe fn CmdLineParse(CmdLine: PCSTR) {
         Length = strcspn(Setting as PCSTR, b" \t\0".as_ptr() as PCSTR);
 
         RtlStringCbCopyNA(
-            DebugString.as_mut_ptr(),
-            core::mem::size_of_val(&DebugString),
+            (*&raw mut DebugString).as_mut_ptr(),
+            core::mem::size_of_val(&*&raw const DebugString),
             Setting as PCSTR,
             Length,
         );
-        _strupr(DebugString.as_mut_ptr());
+        _strupr((*&raw mut DebugString).as_mut_ptr());
 
-        Setting = DebugString.as_mut_ptr();
+        Setting = (*&raw mut DebugString).as_mut_ptr();
         while *Setting != 0 {
             if *Setting == b';' as i8 {
                 *Setting = b' ' as i8;
@@ -71,7 +71,7 @@ unsafe fn CmdLineParse(CmdLine: PCSTR) {
             Setting = Setting.offset(1);
         }
 
-        BootMgrInfo.DebugString = DebugString.as_ptr() as PCSTR;
+        BootMgrInfo.DebugString = (*&raw const DebugString).as_ptr() as PCSTR;
     }
 
     Setting = strstr(CmdLine, b"video=\0".as_ptr() as PCSTR);
@@ -92,12 +92,12 @@ unsafe fn CmdLineParse(CmdLine: PCSTR) {
         Length = strcspn(Setting as PCSTR, b" \t\0".as_ptr() as PCSTR);
 
         RtlStringCbCopyNA(
-            VideoOptions.as_mut_ptr(),
-            core::mem::size_of_val(&VideoOptions),
+            (*&raw mut VideoOptions).as_mut_ptr(),
+            core::mem::size_of_val(&*&raw const VideoOptions),
             Setting as PCSTR,
             Length,
         );
-        BootMgrInfo.VideoOptions = VideoOptions.as_ptr() as PCSTR;
+        BootMgrInfo.VideoOptions = (*&raw const VideoOptions).as_ptr() as PCSTR;
     }
 
     Setting = strstr(CmdLine, b"timeout=\0".as_ptr() as PCSTR);
@@ -113,12 +113,12 @@ unsafe fn CmdLineParse(CmdLine: PCSTR) {
         Length = strcspn(Setting as PCSTR, b" \t\0".as_ptr() as PCSTR);
 
         RtlStringCbCopyNA(
-            DefaultOs.as_mut_ptr(),
-            core::mem::size_of_val(&DefaultOs),
+            (*&raw mut DefaultOs).as_mut_ptr(),
+            core::mem::size_of_val(&*&raw const DefaultOs),
             Setting as PCSTR,
             Length,
         );
-        BootMgrInfo.DefaultOs = DefaultOs.as_ptr() as PCSTR;
+        BootMgrInfo.DefaultOs = (*&raw const DefaultOs).as_ptr() as PCSTR;
     }
 
     Setting = strstr(CmdLine, b"rdbase=\0".as_ptr() as PCSTR);
@@ -188,8 +188,8 @@ pub unsafe extern "C" fn LoadSettings(CmdLine: PCSTR) {
     }
 
     if IniReadSettingByName(BootMgrInfo.FrLdrSection, b"Debug\0".as_ptr() as PCSTR,
-                            DebugString.as_mut_ptr(), core::mem::size_of_val(&DebugString) as ULONG) != 0 {
-        BootMgrInfo.DebugString = DebugString.as_ptr() as PCSTR;
+                            (*&raw mut DebugString).as_mut_ptr(), core::mem::size_of_val(&*&raw const DebugString) as ULONG) != 0 {
+        BootMgrInfo.DebugString = (*&raw const DebugString).as_ptr() as PCSTR;
     }
 
     if BootMgrInfo.TimeOut < 0 {
@@ -203,8 +203,8 @@ pub unsafe extern "C" fn LoadSettings(CmdLine: PCSTR) {
 
     if BootMgrInfo.DefaultOs.is_null() || *BootMgrInfo.DefaultOs == 0 {
         if IniReadSettingByName(BootMgrInfo.FrLdrSection, b"DefaultOS\0".as_ptr() as PCSTR,
-                                DefaultOs.as_mut_ptr(), core::mem::size_of_val(&DefaultOs) as ULONG) != 0 {
-            BootMgrInfo.DefaultOs = DefaultOs.as_ptr() as PCSTR;
+                                (*&raw mut DefaultOs).as_mut_ptr(), core::mem::size_of_val(&*&raw const DefaultOs) as ULONG) != 0 {
+            BootMgrInfo.DefaultOs = (*&raw const DefaultOs).as_ptr() as PCSTR;
         }
     }
 }

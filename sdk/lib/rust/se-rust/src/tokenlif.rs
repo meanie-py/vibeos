@@ -1454,7 +1454,11 @@ pub unsafe extern "system" fn NtDuplicateToken(
     let mut new_token: PTOKEN = core::ptr::null_mut();
     let mut captured_security_quality_of_service: PSECURITY_QUALITY_OF_SERVICE = core::ptr::null_mut();
     let mut qos_present: BOOLEAN = 0;
-    let mut handle_information: POBJECT_HANDLE_INFORMATION = core::ptr::null_mut();
+    // The C's `OBJECT_HANDLE_INFORMATION HandleInformation;` is a STACK struct whose address
+    // ObReferenceObjectByHandle fills. A null pointer here meant it was never filled, and a
+    // DesiredAccess of 0 ("same access") handed back a handle with no access at all.
+    let mut handle_information_buf: OBJECT_HANDLE_INFORMATION = core::mem::zeroed();
+    let handle_information: POBJECT_HANDLE_INFORMATION = &mut handle_information_buf;
     let mut status: NTSTATUS;
 
     if token_type != TOKEN_TYPE_TokenImpersonation && token_type != TOKEN_TYPE_TokenPrimary {
@@ -1567,7 +1571,12 @@ pub unsafe extern "system" fn NtFilterToken(
     let mut filtered_token_handle: HANDLE = core::ptr::null_mut();
     let mut status: NTSTATUS;
     let previous_mode: KPROCESSOR_MODE;
-    let mut handle_info: POBJECT_HANDLE_INFORMATION = core::ptr::null_mut();
+    // A STACK struct in the C (`OBJECT_HANDLE_INFORMATION HandleInfo;`), filled by
+    // ObReferenceObjectByHandle: the filtered token's handle gets the existing handle's
+    // access. As a null pointer it got none, so every CreateRestrictedToken result was a
+    // handle nothing could use (Chrome's sandbox: SBOX_ERROR_CANNOT_CREATE_RESTRICTED_TOKEN).
+    let mut handle_info_buf: OBJECT_HANDLE_INFORMATION = core::mem::zeroed();
+    let handle_info: POBJECT_HANDLE_INFORMATION = &mut handle_info_buf;
     let mut result_length: ULONG = 0;
     let mut captured_sids_count: ULONG = 0;
     let mut captured_privileges_count: ULONG = 0;

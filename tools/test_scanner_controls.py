@@ -3779,6 +3779,13 @@ UNCOVERED: dict[str, str] = {
         "NT_ASSERT must be flagged, the faithful one must not, and neither must another "
         "module's same-named C function."
     ),
+    "scan_compare_const_vs_c": (
+        "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
+        "and known-good fixtures are the unit tests in "
+        "tools/vibeos-lint/src/rules/compare_const_vs_c.rs: crypt32's CertAddStoreToCollection "
+        "comparing the store type with E_INVALIDARG must be flagged, the faithful "
+        "StoreTypeCollection body must not."
+    ),
     "scan_sizeof_vs_c": (
         "it is a native Rust rule with no Python script for a Control to run. Its known-bad "
         "and known-good fixtures are the unit tests in "
@@ -3932,6 +3939,12 @@ UNCOVERED: dict[str, str] = {
         "the two shapes that shipped (a declared-usize identifier, an `as usize` cast); its "
         "must-not cases pin the u32 rop, the version DWORD, the call-proc `== 0xFFFF0000` "
         "form, the fixed `& !0xFFFF` form and C quoted in a comment."
+    ),
+    "scan_null_out_param": (
+        "main() walks the real tree, but the decision is scan_code(), a pure function over a "
+        "string, driven directly in tools/vibeos-lint/src/rules/null_out_param.rs. Its fire "
+        "case is the shape that shipped (NtFilterToken's HandleInfo); its must-not cases pin "
+        "assignment, a &mut borrow, a macro cursor, an is_null-only use and function scope."
     ),
     "scan_queued_lock_plain_acquire": (
         "main() walks the real tree, but the decision is scan_code(), a pure function over a "
