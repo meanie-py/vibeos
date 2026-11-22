@@ -10155,6 +10155,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ucdfs-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
 name = "ucrt-difftest"
 version = "0.1.0"
 dependencies = [
@@ -10195,6 +10203,22 @@ dependencies = [
 name = "uefildr-cargo"
 version = "0.1.0"
 dependencies = [
+ "reactos-link",
+]
+
+[[package]]
+name = "ufat-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
+ "reactos-link",
+]
+
+[[package]]
+name = "ufatx-cargo"
+version = "0.1.0"
+dependencies = [
+ "panic-lean",
  "reactos-link",
 ]
 

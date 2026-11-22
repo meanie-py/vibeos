@@ -11,10 +11,7 @@ setuplib: linked by cmake, not a cargo cell
 setuplib_probe: linked by cmake, not a cargo cell
 skiplist_test: linked by cmake, not a cargo cell
 svchost: linked by cmake, not a cargo cell
-ucdfs: linked by cmake, not a cargo cell
 ucrtbase: linked by cmake, not a cargo cell
-ufat: linked by cmake, not a cargo cell
-ufatx: linked by cmake, not a cargo cell
 wdmaud.drv: linked by cmake, not a cargo cell
 win32u: linked by cmake, not a cargo cell
 wow64cpu: linked by cmake, not a cargo cell

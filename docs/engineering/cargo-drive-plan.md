@@ -608,8 +608,14 @@ extends it from the boot spine to every fully-Rust module.
      - windowscodecs' recipe reorders an include after libtiff's rewrite. Its DLL is
        sha256-identical with and without it on all 3 arches, as are drwtsn32 and mscoree
        after dbghelp's rewrite.
+   - **2026-11-22: ufat, ufatx and ucdfs (`nativedll`) converted**, EQUIVALENT ×3. A
+     nativedll is cmake's win32dll link with `--subsystem,native:5.01` and entry DllMain:
+     exports from the .def, default alignment, no image base, no gc. It renders as
+     `ModuleKind::Win32Dll { subsystem: Some("native:5.01") }`, not as a kernel kind.
+     setuplib, the fourth, builds no DLL in this configuration (no cmake output to prove
+     against).
    - **RESUME HERE (2026-11-08, fleet pause).**
-     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer, filebrowser, dbghelp, libtirpc, rapps.com, libtiff and glu32 followed, ratchet 20.)*
+     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer, filebrowser, dbghelp, libtirpc, rapps.com, libtiff, glu32, ufat, ufatx and ucdfs followed, ratchet 17.)*
      - The cmake_linked_modules ratchet is at **31**. This week's 24 cells are queued in the
        integrator's combined batch 169+170 on `cells-dotted` 0fa7e73bb5c, which includes
        cells-fusion and cells-exports: the five export holds, fusion ×3, rpcrt4, uniata and
@@ -617,7 +623,7 @@ extends it from the boot spine to every fully-Rust module.
        If it bounced, the integrator's message names the gate dir.
      - **Next, by size:**
        - msvcrt: its custom cargo command shape;
-       - the nativedll kind (4);
+       - setuplib (nativedll, not built in this configuration);
        - the wow64cpu.S / sys-stubs.S asm inputs;
        - the CRTs and wdmaud.drv (two bodies).
        - Run `tools/codegen cargo-cell <target>` per module for its current refusal.

@@ -1757,8 +1757,11 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             "Win32Exe"
         }
         "C_MODULE_LIBRARY" | "C_SHARED_LIBRARY" => {
-            if subsys.starts_with("native") {
-                let typ = facts["module_type"].as_str().unwrap_or("");
+            let typ = facts["module_type"].as_str().unwrap_or("");
+            // nativedll (ufat, ucdfs: user-mode DLLs on the native subsystem, for autochk) is
+            // cmake's win32dll link with `--subsystem,native:5.01` and entry DllMain: exports
+            // from the .def, default alignment, no image base, no gc.
+            if subsys.starts_with("native") && typ != "nativedll" {
                 if !const_contains("KERNEL_KINDS", typ) {
                     return Err(Error::new(format!(
                         "{target}: kernel-mode module type {typ} is not modelled"

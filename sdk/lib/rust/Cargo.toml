@@ -1,5 +1,8 @@
 [workspace]
 members = [
+    "ucdfs-cargo",
+    "ufatx-cargo",
+    "ufat-cargo",
     "glu32-cargo",
     "libtiff-cargo",
     "libtirpc-cargo",
