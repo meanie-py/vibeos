@@ -300,7 +300,7 @@ unsafe extern "system" fn ddraw_clipper_Initialize(
 unsafe extern "system" fn ddraw_clipper_IsClipListChanged(iface: *mut IDirectDrawClipper, changed: *mut BOOL) -> HRESULT {
     let mut clipper: *mut ddraw_clipper = impl_from_IDirectDrawClipper(iface);
 
-    DPRINT1!("iface %p, changed %p stub!\n", iface, changed);
+    FIXME!("iface %p, changed %p stub!\n", iface, changed);
 
     if ddraw_clipper_is_valid(clipper) == 0 {
         return DDERR_INVALIDPARAMS;

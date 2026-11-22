@@ -541,7 +541,7 @@ pub unsafe extern "system" fn SetCurrentProcessExplicitAppUserModelID(
 
 #[no_mangle]
 pub unsafe extern "system" fn GetCurrentProcessExplicitAppUserModelID(appid: *mut *const u16) -> HRESULT {
-    DPRINT1!("%p: stub\n", appid);
+    FIXME!("%p: stub\n", appid);
     *appid = core::ptr::null::<u16>();
     return E_NOTIMPL;
 }

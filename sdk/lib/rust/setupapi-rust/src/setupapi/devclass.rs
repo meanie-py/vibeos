@@ -874,7 +874,7 @@ pub unsafe extern "system" fn SetupDiInstallClassExW(
 ) -> BOOL {
     let mut ret: BOOL = (FALSE as i32);
 
-    DPRINT1!(
+    TRACE!(
         "%p %s 0x%lx %p %s %p %p\n",
         hwndParent,
         debugstr_w(InfFileName),
@@ -886,10 +886,10 @@ pub unsafe extern "system" fn SetupDiInstallClassExW(
     );
 
     if InfFileName.is_null() {
-        DPRINT1!("Case not implemented: InfFileName NULL\n");
+        FIXME!("Case not implemented: InfFileName NULL\n");
         SetLastError(ERROR_CALL_NOT_IMPLEMENTED as DWORD);
     } else if (Flags & !(DI_NOVCP | DI_NOBROWSE | DI_FORCECOPY | DI_QUIETINSTALL)) != 0 {
-        DPRINT1!(
+        TRACE!(
             "Unknown flags: 0x%08lx\n",
             Flags & !(DI_NOVCP | DI_NOBROWSE | DI_FORCECOPY | DI_QUIETINSTALL)
         );
@@ -1047,7 +1047,7 @@ pub unsafe extern "system" fn SetupDiInstallClassExW(
         SetupTermDefaultQueueCallback(callback_context);
     }
 
-    DPRINT1!("Returning %d\n", ret);
+    TRACE!("Returning %d\n", ret);
     return ret;
 }
 
