@@ -21,7 +21,9 @@
 >    OWED: the generated WOW64 struct marshallers (tools/vibeos-codegen `marshal`) SIGN-extend
 >    pointer and ULONG_PTR fields (`WowCbSx`), which is right for handles but turns a
 >    large-address-aware guest's buffer at or above 2 GiB into a kernel-half address.
-> 4. The sandbox quest (the user asked to dip a toe in; not started).
+> 4. The sandbox quest: started 2026-11-22, see
+>    [chrome-sandbox-quest.md](../chrome-sandbox-quest.md) (step 3, the restricted token, is next).
+> 5. netstack BUGCHECK 0xA in the TCP receive bridge (registry entry).
 > Loading over the network is done (Chrome rung 2, `34e17dfff6e`).
 
 > **2026-09-20: superseded for active work.** The owner chose direct bare-metal

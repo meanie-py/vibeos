@@ -318,6 +318,12 @@ pub unsafe extern "system" fn NtQueryInformationProcess(
     let mut Length: ULONG = 0;
     let QueryAccess = process_query_access(ProcessInformationClass);
 
+    // Past the info-class table, so before its bounds check (mitigation.rs).
+    if ProcessInformationClass as u32 == crate::mitigation::PROCESS_MITIGATION_POLICY_CLASS {
+        return crate::mitigation::query_process_mitigation(
+            ProcessHandle, ProcessInformation, ProcessInformationLength, ReturnLength, PreviousMode);
+    }
+
     Status = DefaultQueryInfoBufferCheck(
         ProcessInformationClass,
         core::ptr::addr_of!(PsProcessInfoClass),
@@ -1146,6 +1152,11 @@ pub unsafe extern "system" fn NtSetInformationProcess(
     let mut Next: PLIST_ENTRY;
     let mut Thread: PETHREAD;
 
+    if ProcessInformationClass as u32 == crate::mitigation::PROCESS_MITIGATION_POLICY_CLASS {
+        return crate::mitigation::set_process_mitigation(
+            ProcessHandle, ProcessInformation, ProcessInformationLength, PreviousMode);
+    }
+
     Status = DefaultSetInfoBufferCheck(
         ProcessInformationClass,
         core::ptr::addr_of!(PsProcessInfoClass),
@@ -1613,6 +1624,11 @@ pub unsafe extern "system" fn NtSetInformationThread(
     let mut ExpansionSlots: *mut PVOID;
     let mut ProcThread: PETHREAD;
     let mut HasPrivilege: BOOLEAN;
+
+    if ThreadInformationClass as u32 == crate::mitigation::THREAD_DYNAMIC_CODE_POLICY_CLASS {
+        return crate::mitigation::set_thread_dynamic_code(
+            ThreadHandle, ThreadInformation, ThreadInformationLength, PreviousMode);
+    }
 
     Status = DefaultSetInfoBufferCheck(
         ThreadInformationClass,
