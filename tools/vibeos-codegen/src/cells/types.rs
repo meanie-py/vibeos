@@ -134,6 +134,12 @@ pub struct Cell {
     /// without ATL's include dirs.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sibling_shims: Vec<(String, Vec<String>)>,
+    /// Other CMakeLists that name only the target's output DIRECTORY,
+    /// `$<TARGET_FILE_DIR:t>` (rshell copies itself beside explorer.exe). A cell is a custom
+    /// target the genex cannot resolve, so those files are rewritten to the cell's binary
+    /// dir, where add_cargo_module copies the output.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dir_refs: Vec<String>,
 }
 impl Default for Cell {
     fn default() -> Self {
@@ -186,6 +192,7 @@ impl Default for Cell {
             no_module_type: false,
             stub_specs: Vec::new(),
             sibling_shims: Vec::new(),
+            dir_refs: Vec::new(),
         }
     }
 }

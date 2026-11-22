@@ -1628,6 +1628,21 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
         .flatten()
         .filter(|p| root.join(p) != cmake)
         .collect();
+    // A file that names only the output's directory is rewritten with the cell; one that
+    // reads the file itself would need the cell's build ordered before it, so is refused.
+    let dir_only = |p: &String| -> bool {
+        let text = std::fs::read_to_string(root.join(p)).unwrap_or_default();
+        let t = regex::escape(target);
+        let any = re(&format!(r"\$<TARGET_(?:LINKER_)?FILE(?:_DIR|_NAME)?:{t}>"));
+        let dir = re(&format!(r"\$<TARGET_FILE_DIR:{t}>"));
+        any.find_iter(&text).count() == dir.find_iter(&text).count()
+    };
+    let dir_refs: Vec<String> = others
+        .iter()
+        .filter(|p| dir_only(p))
+        .map(|p| (*p).clone())
+        .collect();
+    let others: Vec<_> = others.into_iter().filter(|p| !dir_only(p)).collect();
     if !others.is_empty() {
         return Err(Error::new(format!(
             "{target}: other CMakeLists read its file via $<TARGET_FILE...>: {others:?}"
@@ -1849,6 +1864,7 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     }
     let mut cell = super::Cell::default();
     cell.target = target.into();
+    cell.dir_refs = dir_refs;
     cell.cmake_dir = cmake_dir.clone();
     cell.output_name = Path::new(&first.output)
         .file_name()

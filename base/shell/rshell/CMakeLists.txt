@@ -24,10 +24,10 @@ add_cargo_module(rshell rshell-cargo rshell.dll
 add_custom_command(TARGET rshell POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy
      "${CMAKE_CURRENT_BINARY_DIR}/rshell.dll"
-     "$<TARGET_FILE_DIR:explorer>/rshell.dll"
+     "${CMAKE_BINARY_DIR}/base/shell/explorer/rshell.dll"
   COMMENT "Copying to output directory")
 add_custom_command(TARGET rshell POST_BUILD
   COMMAND "${CMAKE_COMMAND}" -E copy
      "${CMAKE_CURRENT_BINARY_DIR}/rshell.dll"
-     "$<TARGET_FILE_DIR:filebrowser>/rshell.dll"
+     "${CMAKE_BINARY_DIR}/base/shell/filebrowser/rshell.dll"
   COMMENT "Copying to output directory")
