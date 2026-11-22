@@ -618,8 +618,12 @@ extends it from the boot spine to every fully-Rust module.
      msvcrtex: svchost-rust defines the entry (`wmainCRTStartup`). "exe without a msvcrtex
      CRT startup" now refuses only when cmake linked an msvcrtex archive the cell did not
      recognise.
+   - **2026-11-22: win32u and wow64cpu converted**, EQUIVALENT ×3 and on amd64, the only
+     arch cmake builds wow64cpu for. A source `.S` among the module's own objects
+     (win32u's sys-stubs.S, wow64cpu.S) replays like C, since its recipe line is `asm`.
+     Until now only the per-arch objects path took one.
    - **RESUME HERE (2026-11-08, fleet pause).**
-     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer, filebrowser, dbghelp, libtirpc, rapps.com, libtiff, glu32, ufat, ufatx, ucdfs and svchost followed, ratchet 16.)*
+     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer, filebrowser, dbghelp, libtirpc, rapps.com, libtiff, glu32, ufat, ufatx, ucdfs, svchost, win32u and wow64cpu followed, ratchet 14.)*
      - The cmake_linked_modules ratchet is at **31**. This week's 24 cells are queued in the
        integrator's combined batch 169+170 on `cells-dotted` 0fa7e73bb5c, which includes
        cells-fusion and cells-exports: the five export holds, fusion ×3, rpcrt4, uniata and
@@ -628,7 +632,6 @@ extends it from the boot spine to every fully-Rust module.
      - **Next, by size:**
        - msvcrt: its custom cargo command shape;
        - setuplib (nativedll, not built in this configuration);
-       - the wow64cpu.S / sys-stubs.S asm inputs;
        - the CRTs and wdmaud.drv (two bodies).
        - Run `tools/codegen cargo-cell <target>` per module for its current refusal.
      - **Owed (2026-11-21):** audit the committed Rust-body cells against cmake for the
