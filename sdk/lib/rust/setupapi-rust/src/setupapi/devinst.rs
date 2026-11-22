@@ -5218,8 +5218,91 @@ pub unsafe extern "system" fn SetupDiSetClassInstallParamsA(
     ClassInstallParams: PSP_CLASSINSTALL_HEADER,
     ClassInstallParamsSize: DWORD,
 ) -> BOOL {
-    // FIXME("%p %p %x %u\n",DeviceInfoSet, DeviceInfoData, ClassInstallParams->InstallFunction, ClassInstallParamsSize);
-    (FALSE as i32)
+    // Upstream (and Wine) leave this a FIXME returning FALSE, so an ANSI caller can never set
+    // DIF_PROPERTYCHANGE params, i.e. never disable or enable a device. Windows forwards to the
+    // W entry point: the parameter blocks of most DIF codes hold no text and are passed through
+    // unchanged; the three that carry ANSI strings are converted to their W layout first.
+    if ClassInstallParams.is_null()
+        || (ClassInstallParamsSize as usize) < core::mem::size_of::<SP_CLASSINSTALL_HEADER>()
+    {
+        // The W entry point owns the validation (and the "clear the params" case).
+        return SetupDiSetClassInstallParamsW(DeviceInfoSet, DeviceInfoData, ClassInstallParams, ClassInstallParamsSize);
+    }
+    let func = (*ClassInstallParams).InstallFunction as u32;
+    if func == DIF_SELECTDEVICE {
+        if (ClassInstallParamsSize as usize) < core::mem::size_of::<SP_SELECTDEVICE_PARAMS_A>() {
+            SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+            return FALSE as BOOL;
+        }
+        let a = (ClassInstallParams as *const SP_SELECTDEVICE_PARAMS_A).read_unaligned();
+        let mut w: SP_SELECTDEVICE_PARAMS_W = core::mem::zeroed();
+        w.ClassInstallHeader = a.ClassInstallHeader;
+        w.Title = class_params_a_to_w(a.Title);
+        w.Instructions = class_params_a_to_w(a.Instructions);
+        w.ListLabel = class_params_a_to_w(a.ListLabel);
+        w.SubTitle = class_params_a_to_w(a.SubTitle);
+        return SetupDiSetClassInstallParamsW(
+            DeviceInfoSet,
+            DeviceInfoData,
+            core::ptr::addr_of_mut!(w.ClassInstallHeader),
+            core::mem::size_of::<SP_SELECTDEVICE_PARAMS_W>() as DWORD,
+        );
+    }
+    if func == DIF_TROUBLESHOOTER {
+        if (ClassInstallParamsSize as usize) < core::mem::size_of::<SP_TROUBLESHOOTER_PARAMS_A>() {
+            SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+            return FALSE as BOOL;
+        }
+        let a = (ClassInstallParams as *const SP_TROUBLESHOOTER_PARAMS_A).read_unaligned();
+        let mut w: SP_TROUBLESHOOTER_PARAMS_W = core::mem::zeroed();
+        w.ClassInstallHeader = a.ClassInstallHeader;
+        w.ChmFile = class_params_a_to_w(a.ChmFile);
+        w.HtmlTroubleShooter = class_params_a_to_w(a.HtmlTroubleShooter);
+        return SetupDiSetClassInstallParamsW(
+            DeviceInfoSet,
+            DeviceInfoData,
+            core::ptr::addr_of_mut!(w.ClassInstallHeader),
+            core::mem::size_of::<SP_TROUBLESHOOTER_PARAMS_W>() as DWORD,
+        );
+    }
+    if func == DIF_POWERMESSAGEWAKE {
+        if (ClassInstallParamsSize as usize) < core::mem::size_of::<SP_POWERMESSAGEWAKE_PARAMS_A>() {
+            SetLastError(ERROR_INVALID_PARAMETER as DWORD);
+            return FALSE as BOOL;
+        }
+        let a = (ClassInstallParams as *const SP_POWERMESSAGEWAKE_PARAMS_A).read_unaligned();
+        let mut w: SP_POWERMESSAGEWAKE_PARAMS_W = core::mem::zeroed();
+        w.ClassInstallHeader = a.ClassInstallHeader;
+        w.PowerMessageWake = class_params_a_to_w(a.PowerMessageWake);
+        return SetupDiSetClassInstallParamsW(
+            DeviceInfoSet,
+            DeviceInfoData,
+            core::ptr::addr_of_mut!(w.ClassInstallHeader),
+            core::mem::size_of::<SP_POWERMESSAGEWAKE_PARAMS_W>() as DWORD,
+        );
+    }
+    SetupDiSetClassInstallParamsW(DeviceInfoSet, DeviceInfoData, ClassInstallParams, ClassInstallParamsSize)
+}
+
+/// One fixed ANSI field of a class-install parameter block into its W twin. The A field need
+/// not be NUL-terminated, so the conversion is bounded by the field, and the W field always
+/// ends in a NUL (a string that fills the A field is truncated by one character). Fields go in
+/// and out BY VALUE: these blocks are `pack(1)` on i386, so a reference to one is unaligned.
+unsafe fn class_params_a_to_w<const A: usize, const W: usize>(src: [CHAR; A]) -> [WCHAR; W] {
+    let mut dst = [0 as WCHAR; W];
+    let len = src.iter().position(|&c| c == 0).unwrap_or(A);
+    if len != 0 {
+        let n = MultiByteToWideChar(
+            CP_ACP as UINT,
+            0,
+            src.as_ptr(),
+            len as core::ffi::c_int,
+            dst.as_mut_ptr(),
+            (W - 1) as core::ffi::c_int,
+        );
+        dst[(n.max(0) as usize).min(W - 1)] = 0;
+    }
+    dst
 }
 unsafe extern "system" fn IntSetupDiRegisterDeviceInfo(
     DeviceInfoSet: HDEVINFO,
