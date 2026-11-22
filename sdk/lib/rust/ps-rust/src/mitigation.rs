@@ -52,10 +52,25 @@ struct PolicyInformation {
     flags: u32,
 }
 
-/// The policy word lives in EPROCESS.Spares[0], unused by everything else (ndk pstypes.h).
+/// The policy lives in the two spare bits of EPROCESS.Flags (Spare1/Spare2, bits 30-31 of the
+/// pre-Longhorn layout every arch builds: ndk pstypes.h), the word the kernel already updates
+/// with interlocked ops. Only what MM enforces is stored; AllowRemoteDowngrade is accepted
+/// (it grants a capability vibeos does not offer) but not stored, so a query does not echo
+/// it back, unlike Windows.
+const EPROCESS_FLAG_PROHIBIT_DYNAMIC_CODE: u32 = 1 << 30;
+const EPROCESS_FLAG_DYNAMIC_CODE_OPT_OUT: u32 = 1 << 31;
+
 #[inline]
-unsafe fn policy_word(process: *mut _EPROCESS) -> *mut u32 {
-    core::ptr::addr_of_mut!((*process).Spares[0])
+unsafe fn process_flags(process: *mut _EPROCESS) -> *mut u32 {
+    core::ptr::addr_of_mut!((*process).__bindgen_anon_2.Flags)
+}
+
+/// The dynamic-code policy flags (PROHIBIT_DYNAMIC_CODE | ALLOW_THREAD_OPT_OUT) of `process`.
+#[inline]
+unsafe fn dynamic_code_flags(process: *mut _EPROCESS) -> u32 {
+    let f = core::ptr::read_volatile(process_flags(process));
+    (if f & EPROCESS_FLAG_PROHIBIT_DYNAMIC_CODE != 0 { PROHIBIT_DYNAMIC_CODE } else { 0 })
+        | (if f & EPROCESS_FLAG_DYNAMIC_CODE_OPT_OUT != 0 { ALLOW_THREAD_OPT_OUT } else { 0 })
 }
 
 #[inline]
@@ -71,7 +86,7 @@ pub unsafe extern "C" fn PsVibeDynamicCodeBlocked(process: PVOID) -> u8 {
     if process as *mut _EPROCESS != current {
         return 0;
     }
-    let word = core::ptr::read_volatile(policy_word(current));
+    let word = dynamic_code_flags(current);
     if word & PROHIBIT_DYNAMIC_CODE == 0 {
         return 0;
     }
@@ -118,13 +133,14 @@ pub unsafe fn set_process_mitigation(handle: HANDLE, buffer: PVOID, length: ULON
     } else if info.flags & !KNOWN != 0 {
         STATUS_NOT_SUPPORTED
     } else {
-        let word = policy_word(process);
-        let old = core::ptr::read_volatile(word);
+        let old = dynamic_code_flags(process);
         if old & PROHIBIT_DYNAMIC_CODE != 0 && info.flags & PROHIBIT_DYNAMIC_CODE == 0 {
             STATUS_ACCESS_DENIED // a process cannot lift ACG from itself
         } else {
-            let atomic = &*(word as *const core::sync::atomic::AtomicU32);
-            atomic.fetch_or(info.flags, core::sync::atomic::Ordering::SeqCst);
+            let bits = (if info.flags & PROHIBIT_DYNAMIC_CODE != 0 { EPROCESS_FLAG_PROHIBIT_DYNAMIC_CODE } else { 0 })
+                | (if info.flags & ALLOW_THREAD_OPT_OUT != 0 { EPROCESS_FLAG_DYNAMIC_CODE_OPT_OUT } else { 0 });
+            let atomic = &*(process_flags(process) as *const core::sync::atomic::AtomicU32);
+            atomic.fetch_or(bits, core::sync::atomic::Ordering::SeqCst);
             STATUS_SUCCESS
         }
     };
@@ -147,7 +163,7 @@ pub unsafe fn query_process_mitigation(handle: HANDLE, buffer: PVOID, length: UL
         Err(s) => return s,
     };
     info.flags = if info.policy == PROCESS_DYNAMIC_CODE_POLICY {
-        core::ptr::read_volatile(policy_word(process)) & KNOWN
+        dynamic_code_flags(process)
     } else {
         0
     };
@@ -183,7 +199,7 @@ pub unsafe fn set_thread_dynamic_code(handle: HANDLE, buffer: PVOID, length: ULO
         STATUS_INVALID_PARAMETER
     } else if value > 1 {
         STATUS_INVALID_PARAMETER
-    } else if core::ptr::read_volatile(policy_word(PsGetCurrentProcess() as *mut _EPROCESS)) & ALLOW_THREAD_OPT_OUT == 0 {
+    } else if dynamic_code_flags(PsGetCurrentProcess() as *mut _EPROCESS) & ALLOW_THREAD_OPT_OUT == 0 {
         STATUS_ACCESS_DENIED
     } else {
         let flags = thread_flags(current);
