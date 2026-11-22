@@ -1,11 +1,9 @@
 audio_test: linked by cmake, not a cargo cell
 crtdll: linked by cmake, not a cargo cell
 fdebug: linked by cmake, not a cargo cell
-glu32: linked by cmake, not a cargo cell
 installfreeldr: linked by cmake, not a cargo cell
 kernel32_vista: linked by cmake, not a cargo cell
 lfbbvid: linked by cmake, not a cargo cell
-libtiff: linked by cmake, not a cargo cell
 msvcrt: linked by cmake, not a cargo cell
 msvcrt20: linked by cmake, not a cargo cell
 msvcrt40: linked by cmake, not a cargo cell
@@ -13,10 +11,7 @@ setuplib: linked by cmake, not a cargo cell
 setuplib_probe: linked by cmake, not a cargo cell
 skiplist_test: linked by cmake, not a cargo cell
 svchost: linked by cmake, not a cargo cell
-ucdfs: linked by cmake, not a cargo cell
 ucrtbase: linked by cmake, not a cargo cell
-ufat: linked by cmake, not a cargo cell
-ufatx: linked by cmake, not a cargo cell
 wdmaud.drv: linked by cmake, not a cargo cell
 win32u: linked by cmake, not a cargo cell
 wow64cpu: linked by cmake, not a cargo cell

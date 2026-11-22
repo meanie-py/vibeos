@@ -1019,7 +1019,14 @@ pub fn cmake_facts(cmake: &Path, target: &str, libs: &[String]) -> Result<serde_
             || cmd == "spec2def"
             || (a[0] != target && !(cmd == "add_cd_file" && a.iter().any(|x| x == target)))
         {
-            if re(r"\$\{(SOURCE|PCH_SKIP_SOURCE)\}").is_match(raw)
+            // `list(APPEND PCH_SKIP_SOURCE ... ${SOURCE})` (glu32) builds one of the
+            // module's own source lists from the other: not another consumer of either.
+            let own_list = cmd == "list"
+                && a.len() > 1
+                && a[0] == "APPEND"
+                && ["SOURCE", "PCH_SKIP_SOURCE"].contains(&a[1].as_str());
+            if !own_list
+                && re(r"\$\{(SOURCE|PCH_SKIP_SOURCE)\}").is_match(raw)
                 && !home.as_ref().is_some_and(|p| exclusive(&paths[i], p))
                 && inlinable_source(&text, cmake.parent().unwrap())?.is_none()
             {
@@ -1750,8 +1757,11 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
             "Win32Exe"
         }
         "C_MODULE_LIBRARY" | "C_SHARED_LIBRARY" => {
-            if subsys.starts_with("native") {
-                let typ = facts["module_type"].as_str().unwrap_or("");
+            let typ = facts["module_type"].as_str().unwrap_or("");
+            // nativedll (ufat, ucdfs: user-mode DLLs on the native subsystem, for autochk) is
+            // cmake's win32dll link with `--subsystem,native:5.01` and entry DllMain: exports
+            // from the .def, default alignment, no image base, no gc.
+            if subsys.starts_with("native") && typ != "nativedll" {
                 if !const_contains("KERNEL_KINDS", typ) {
                     return Err(Error::new(format!(
                         "{target}: kernel-mode module type {typ} is not modelled"

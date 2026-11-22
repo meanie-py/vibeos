@@ -1639,6 +1639,25 @@ def test_a_conditional_compile_setting_keeps_its_condition(tmp_path):
     assert out.rfind("if(1)", 0, i) > out.rfind("if(NOT (MSVC))", 0, i)
 
 
+def test_remove_target_compile_option_moves_to_the_object_library_with_its_if(tmp_path):
+    """libtiff's MSVC-only remove_target_compile_option edits the target's COMPILE_OPTIONS:
+    it moves onto the OBJECT library that now compiles, under the if() it sat in."""
+    f = tmp_path / "CMakeLists.txt"
+    f.write_text(
+        "add_executable(m main.c rsrc.rc)\n"
+        "set_module_type(m win32gui UNICODE)\n"
+        "if(MSVC)\n"
+        '    remove_target_compile_option(m "/we4311")\n'
+        "endif()\n"
+        "add_cd_file(TARGET m DESTINATION reactos/system32 FOR all)\n"
+    )
+    c = cell(body_crate="", c_shims=["base/m/main.c"], static_libs={a: [] for a in g.ARCHES})
+    out = g.rewrite_cmake(f, c)
+    i = out.index('remove_target_compile_option(m_shims "/we4311")')
+    assert out.rfind("if(MSVC)", 0, i) != -1
+    assert out.index("add_library(m_shims OBJECT") < i
+
+
 def test_a_comment_inside_a_moved_statement_is_not_carried_as_a_dead_source(tmp_path):
     """d3dx9's `# math.c wants M_PI` sits inside its compile definitions; the statement moves
     to the OBJECT library with it, so it must not also be listed as translated C on disk."""
