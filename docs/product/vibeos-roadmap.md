@@ -700,25 +700,35 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   since, and the console build has not been re-run. Next: stage the console build beside them
   to tell "console only" from "gone".
 
-- **amd64 Chrome payload: a Chrome thread sits Ready for 5-20 s without running (open, found
-  2026-11-07, graviton lane; parked 2026-11-08).** Seen as the sweep's hang sampler
-  (`tools/payloads/stackdump.h`) stalling in `GetThreadContext` on a Chrome thread. That stall
-  can no longer hang the payload: probes have a 20 s deadline and resume a target they left
-  suspended (landed `108be580165`); every sweep since reaches `done`. The flush the thread
-  was first seen in was a coincidence (`flushprobe`: flushes are fast and flat). What is
-  measured: at the deadline the target is **Ready** (ThreadState 1) with no CPU time accrued
-  and a handful of context switches; kernel-side, the context APC is queued and deliverable
-  (`KernelApcPending=1`, APCs not disabled, WaitIrql 0) on a thread whose NextProcessor is 0,
-  at priority 5-7, so it is not being picked to run. Unexplained: why a Ready thread on CPU 0
-  waits seconds (starvation behind busier threads until the balance manager's 300-tick boost,
-  or a ready-list/summary inconsistency). Separately, multi-process Chrome trips the §9.56
-  `[RQ5A]` drain-insert guard a few times per boot (none in the 29 single-process boots before
-  2026-11-06): always a `KiSetPriorityThread` Ready-branch requeue (stamp 9002) at priority 14,
-  the ERESOURCE owner boost, with the thread's stale links forming a short ring that reaches no
-  PRCB list head. One boot stalled with no RQ5A at all, so RQ5A is not the stall's cause; it may
-  be a false positive of the guard on stale union links. Diagnostics parked on branch
-  `graviton-diag-ctxwait` (`74f086b0488`). Next: see the RESUME HERE in
-  `docs/engineering/active-lanes/graviton-spike-plan.md`.
+- **amd64 Chrome payload: a Chrome thread sits Ready for 5-20 s without running (EXPLAINED
+  2026-11-21, graviton lane: CPU saturation on the smoke's one vCPU, not a scheduler bug).**
+  Seen as the sweep's hang sampler (`tools/payloads/stackdump.h`) stalling in
+  `GetThreadContext` on a Chrome thread; probes have a 20 s deadline and resume a target they
+  left suspended (`108be580165`), so it no longer hangs the payload. The smoke boots ONE vCPU
+  unless `--smp N` is passed, so the November "Ready on CPU 0" evidence was the only CPU. A
+  `[STARVE]` print at every balance-set starvation boost (TEMP branch `graviton-diag-ctxwait`
+  @ `a09f763602a`; run 20261121-180654-HgHYdp, 3/3 payloads pass) shows 200-270 boosts per
+  boot: priority 6-7 Chrome threads Ready for 304-363 ticks while the CPU runs priority 8-13
+  threads of the boot's companion apps (`gui64.exe`/`win64.exe` x64 guests, `osk.exe`,
+  `magnify.exe`, `taskmgr.exe` under WOW64), then rescued by the 300-tick boost as on Windows.
+  The probe's own helper thread starves the same way, which is why a probe could time out
+  after the kernel's context wait had already completed. Untested: whether any of those apps
+  is busier than it should be (Magnifier and Task Manager poll by design). Separately,
+  multi-process Chrome trips the §9.56 `[RQ5A]` drain-insert guard a few times per boot, always
+  a `KiSetPriorityThread` Ready-branch requeue (stamp 9002) at priority 14 (the ERESOURCE owner
+  boost) whose stale links form a short ring reaching no PRCB list head (2026-11-21: 2 hits in 1 of
+  3 one-vCPU boots, 0 in 3 four-vCPU boots). Still owed to smp-bringup: settle whether that guard is a false positive on
+  stale union links. Under `--smp 4` the payload wedged on a different bug, fixed below.
+
+- **amd64 `-smp 4` Chrome payload: a CPU spins forever releasing a thread's ApcQueueLock
+  (FIXED 2026-11-21, graviton lane).** 3 of 3 boots wedged right after chrome.exe spawned
+  (run 20261121-190024-EhsfzY; desktop boots passed): one CPU in
+  `KiReleaseApcLockFromSynchLevel`'s wait-for-successor loop, three halted. iomgr's
+  stranded-completion check took `KTHREAD.ApcQueueLock`, a queued lock, with a plain
+  `SpinLockGuard`; on SMP the two protocols corrupt each other. Fixed in `iomgr-rust`
+  `irp.rs`; new source rule `scan_queued_lock_plain_acquire`. Verified: 3/3 `-smp 4` Chrome
+  payloads reach `done` (run 20261121-221337-UwSqhY, 36 min against 158). Field manual: "One
+  lock word, two protocols".
 
 - **OptiPlex 9020: freeldr reset the board after loading the boot drivers (FIXED 2026-11-08,
   graviton lane).** Every netboot reset to coreboot ~165 ms after `[FLDR] phase: boot drivers
