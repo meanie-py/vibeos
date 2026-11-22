@@ -1,0 +1,17 @@
+# inhlist on Windows 11 (winref 20261122-142858-hT2QMI-winref-run-x64).
+inherit, no list:
+  child A open=1 inherit_flag=1 signalled=1
+  child B open=1 inherit_flag=1 signalled=1
+  child C open=0 inherit_flag=0 signalled=0
+inherit, list {A}:
+  child A open=1 inherit_flag=1 signalled=1
+  child B open=0 inherit_flag=0 signalled=0
+  child C open=0 inherit_flag=0 signalled=0
+inherit, list {A,C(not inheritable)}: CreateProcess err=87
+inherit, list {A,A}: CreateProcess err=87
+no inherit, list {A}: CreateProcess err=87
+no inherit, no list:
+  child A open=0 inherit_flag=0 signalled=0
+  child B open=0 inherit_flag=0 signalled=0
+  child C open=0 inherit_flag=0 signalled=0
+inhlist done

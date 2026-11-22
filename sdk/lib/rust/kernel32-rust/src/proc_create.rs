@@ -123,6 +123,11 @@ static CMD_STRING: [u16; 8] = [
  * CreateProcessInternalW
  * ------------------------------------------------------------------------- */
 
+/// ps-rust query.rs `VIBE_THREAD_INHERIT_HANDLE_LIST_CLASS`: the vibeos-private
+/// NtSetInformationThread class that stages a PROC_THREAD_ATTRIBUTE_HANDLE_LIST. The two
+/// values must match.
+const VIBE_THREAD_INHERIT_HANDLE_LIST_CLASS: u32 = 0x5642_0001;
+
 #[no_mangle]
 pub unsafe extern "system" fn CreateProcessInternalW(
     hUserToken: HANDLE,
@@ -355,8 +360,41 @@ pub unsafe extern "system" fn CreateProcessInternalW(
      * InitializeProcThreadAttributeList/UpdateProcThreadAttribute (client/vista_ex.rs).
      * The list is accepted and the flag stripped so the call does not fail, but the
      * attributes are NOT yet applied: PROC_THREAD_ATTRIBUTE_PARENT_PROCESS (needs the
-     * rest of this routine to stop assuming NtCurrentProcess as the parent) and
-     * HANDLE_LIST are owed. */
+     * rest of this routine to stop assuming NtCurrentProcess as the parent) is owed.
+     *
+     * HANDLE_LIST is applied: the child inherits only the listed handles. Windows 11 fails
+     * the call with ERROR_INVALID_PARAMETER for a list with bInheritHandles FALSE, a
+     * listed handle that is not inheritable, or one listed twice
+     * (tools/payloads/hostapps/inhlist.win11.txt). The list is staged for the kernel just
+     * before NtCreateProcessEx, below. */
+    let HandleList: Option<(*const HANDLE, usize)> =
+        if dwCreationFlags & 0x0008_0000u32 != 0 && !lpStartupInfo.is_null() {
+            /* STARTUPINFOEXW: STARTUPINFOW, then lpAttributeList. */
+            let list = *((lpStartupInfo as *const u8).add(core::mem::size_of::<STARTUPINFOW>())
+                as *const *mut core::ffi::c_void);
+            crate::client::vista_ex::handle_list_of(list)
+        } else {
+            None
+        };
+    if let Some((handles, count)) = HandleList {
+        let mut ok = bInheritHandles != 0;
+        for i in 0..count {
+            let h = *handles.add(i);
+            let mut flags: DWORD = 0;
+            if !ok
+                || (0..i).any(|j| *handles.add(j) == h)
+                || crate::client::handle::GetHandleInformation(h, &mut flags) == 0
+                || flags & HANDLE_FLAG_INHERIT == 0
+            {
+                ok = false;
+                break;
+            }
+        }
+        if !ok {
+            SetLastError(ERROR_INVALID_PARAMETER);
+            return FALSE;
+        }
+    }
     dwCreationFlags &= !0x0008_0000u32;
 
     NoWindow = dwCreationFlags & CREATE_NO_WINDOW;
@@ -1740,6 +1778,26 @@ pub unsafe extern "system" fn CreateProcessInternalW(
             /* Save the current TIB value since kernel overwrites it to store PEB */
             TibValue = (*Teb).NtTib.ArbitraryUserPointer;
 
+            /* PROC_THREAD_ATTRIBUTE_HANDLE_LIST: stage it on this thread for the kernel's
+             * handle inheritance (ob-rust inherit_list.rs), and clear it right after. */
+            let StagedHandleList = match HandleList {
+                Some((handles, count)) if bInheritHandles != 0 => {
+                    Status = NtSetInformationThread(
+                        NtCurrentThread(),
+                        VIBE_THREAD_INHERIT_HANDLE_LIST_CLASS as THREADINFOCLASS,
+                        handles as PVOID,
+                        (count * core::mem::size_of::<HANDLE>()) as ULONG,
+                    );
+                    if !NT_SUCCESS(Status) {
+                        BaseSetLastNTError(Status);
+                        Result = FALSE;
+                        break 'quickie;
+                    }
+                    true
+                }
+                _ => false,
+            };
+
             /* Tell the kernel to create the process */
             Status = NtCreateProcessEx(
                 &mut ProcessHandle,
@@ -1752,6 +1810,15 @@ pub unsafe extern "system" fn CreateProcessInternalW(
                 core::ptr::null_mut(),
                 InJob,
             );
+
+            if StagedHandleList {
+                NtSetInformationThread(
+                    NtCurrentThread(),
+                    VIBE_THREAD_INHERIT_HANDLE_LIST_CLASS as THREADINFOCLASS,
+                    core::ptr::null_mut(),
+                    0,
+                );
+            }
 
             /* Load the PEB address from the hacky location where kernel stores it */
             RemotePeb = (*Teb).NtTib.ArbitraryUserPointer as PPEB;

@@ -1597,6 +1597,11 @@ pub unsafe extern "system" fn NtSetInformationProcess(
     Status
 }
 
+/// vibeos-private NtSetInformationThread class: stage the calling thread's
+/// PROC_THREAD_ATTRIBUTE_HANDLE_LIST for its next NtCreateProcessEx (`length` 0 clears it).
+/// Far above Windows' THREADINFOCLASS range so it can never collide; only kernel32 uses it.
+pub const VIBE_THREAD_INHERIT_HANDLE_LIST_CLASS: u32 = 0x5642_0001;
+
 #[no_mangle]
 pub unsafe extern "system" fn NtSetInformationThread(
     ThreadHandle: HANDLE,
@@ -1625,6 +1630,17 @@ pub unsafe extern "system" fn NtSetInformationThread(
     let mut ProcThread: PETHREAD;
     let mut HasPrivilege: BOOLEAN;
 
+    if ThreadInformationClass as u32 == VIBE_THREAD_INHERIT_HANDLE_LIST_CLASS {
+        // kernel32's PROC_THREAD_ATTRIBUTE_HANDLE_LIST staging (ob-rust inherit_list.rs). Only
+        // the calling thread: the list describes the next process it creates.
+        extern "system" {
+            fn ObVibeStageInheritList(Handles: *const HANDLE, Length: ULONG, Mode: KPROCESSOR_MODE) -> NTSTATUS;
+        }
+        if ThreadHandle as isize != -2 {
+            return STATUS_INVALID_PARAMETER;
+        }
+        return ObVibeStageInheritList(ThreadInformation as *const HANDLE, ThreadInformationLength, PreviousMode);
+    }
     if ThreadInformationClass as u32 == crate::mitigation::THREAD_DYNAMIC_CODE_POLICY_CLASS {
         return crate::mitigation::set_thread_dynamic_code(
             ThreadHandle, ThreadInformation, ThreadInformationLength, PreviousMode);

@@ -227,8 +227,8 @@ size and reports `signature:` instead of `linked`; the export now goes to a WINA
 none of them existing code: apps 271 -> 251 missing functions, 671 -> 541 import sites
 (-19%).
 - kernel32 (`client/vista_ex.rs`): the `ProcThreadAttributeList` trio (Wine's layout;
-  `CreateProcess` accepts `EXTENDED_STARTUPINFO_PRESENT` but does not yet APPLY
-  `PARENT_PROCESS` or `HANDLE_LIST` — owed), `CreateEventEx`/`CreateMutexEx`/
+  `CreateProcess` accepts `EXTENDED_STARTUPINFO_PRESENT`, applies `HANDLE_LIST` since
+  2026-11-22, and still ignores `PARENT_PROCESS`, which is owed), `CreateEventEx`/`CreateMutexEx`/
   `CreateWaitableTimerEx` A and W, `Get`/`SetThreadErrorMode` (through
   `RtlSetThreadErrorMode`: the TEB holds the RTL_SEM encoding, 0x10/0x20/0x40, not the
   SEM_ values), `RaiseFailFastException`, and `GetLogicalProcessorInformationEx`
@@ -961,9 +961,10 @@ Ruled out on the way, each by a probe measured against Windows 11:
   Still different from Windows: a message already peeked at counts as new again (a spurious
   wake only).
 
-Owed: `CreateProcess` accepts an extended attribute list but applies none of it (no
-`HANDLE_LIST`, so every child inherits every inheritable handle the browser holds at that
-moment; `kernel32-rust/src/proc_create.rs`).
+`CreateProcess` applies `PROC_THREAD_ATTRIBUTE_HANDLE_LIST` (2026-11-22): a child
+inherits only the listed handles, and the list's error cases match Windows 11 (hostapps
+`inhlist`, `inhlist.win11.txt`; kernel32 stages the list, ob-rust `inherit_list.rs` filters
+inheritance). Still owed: `PARENT_PROCESS` (`kernel32-rust/src/proc_create.rs`).
 
 ### Rung 2 status (2026-11-06): pages over the network
 

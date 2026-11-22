@@ -33,6 +33,8 @@ binaries:
     dest: bin/w11tok/w11tok.exe
   - src: tools/payloads/hostapps/w32sock-{arch}.exe
     dest: bin/w32sock/w32sock.exe
+  - src: tools/payloads/hostapps/inhlist-{arch}.exe
+    dest: bin/inhlist/inhlist.exe
 binaries_from: tools/payloads/hostapps/stage.py
 
 test:

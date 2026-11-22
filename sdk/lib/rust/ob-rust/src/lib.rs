@@ -14,6 +14,7 @@
 pub use dbgprint_rust::dbg_print;
 
 pub mod devicemap;
+pub mod inherit_list;
 pub mod obdir;
 pub mod obhandle;
 pub mod obinit;
