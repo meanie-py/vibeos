@@ -202,3 +202,154 @@ def test_a_build_dir_reports_fresh_units_and_refuses_edited_ones(tmp_path):
     assert c.main([str(repo / "build-i386")]) == 3  # refuses a total missing a crate
     os.utime(src / "edited-rust/src/lib.rs", (1000, 1000))
     assert c.main([str(repo / "build-i386")]) == 0
+
+
+# --- store-served crates (`--recheck-store-hits`) ---------------------------------------
+
+ACTION = {
+    "action_key": "ab" * 32,
+    "configuration": {
+        "environment": {
+            "RUSTFLAGS": "-C force-frame-pointers=yes -C dlltool=/native-tools/bin/llvm-dlltool"
+        }
+    },
+    "descriptor": {
+        "context": {
+            "effective_config": {
+                "argv": [
+                    "/toolchain/bin/cargo",
+                    "build",
+                    "--release",
+                    "--target",
+                    "x86_64-pc-windows-gnu",
+                    "-p",
+                    "acpi-rust",
+                    "--manifest-path",
+                    "/tmp/vibeos/sdk/lib/rust/Cargo.toml",
+                    "--lib",
+                    "--locked",
+                    "--offline",
+                    "--jobs",
+                    "1",
+                    "-vv",
+                    "--features",
+                    "smp",
+                    "--no-default-features",
+                ]
+            }
+        }
+    },
+}
+
+
+def test_the_recheck_runs_the_actions_own_argv_as_a_check(tmp_path):
+    argv, flags = c.check_command(ACTION, tmp_path / "Cargo.toml")
+    assert argv == [
+        "cargo",
+        "check",
+        "--release",
+        "--target",
+        "x86_64-pc-windows-gnu",
+        "-p",
+        "acpi-rust",
+        "--manifest-path",
+        str(tmp_path / "Cargo.toml"),
+        "--lib",
+        "--locked",
+        "--offline",
+        "--features",
+        "smp",
+        "--no-default-features",
+        "--message-format=json",
+    ]
+    assert flags == ACTION["configuration"]["environment"]["RUSTFLAGS"]
+
+
+def test_an_action_without_argv_is_refused_not_guessed(tmp_path):
+    import pytest
+
+    with pytest.raises(c.StoreError):
+        c.check_command({"action_key": "x", "configuration": {}}, tmp_path / "Cargo.toml")
+    bad = {**ACTION, "descriptor": {"context": {"effective_config": {"argv": ["cargo", "test"]}}}}
+    with pytest.raises(c.StoreError):
+        c.check_command(bad, tmp_path / "Cargo.toml")
+
+
+def test_lane_actions_read_the_arch_from_the_cell_dir_and_only_this_lane(tmp_path):
+    import json
+
+    import pytest
+
+    lane = tmp_path / "lane"
+    lane.mkdir()
+    refs = tmp_path / "store" / "v1" / "refs"
+    refs.mkdir(parents=True)
+
+    def ref(name, lane_path, out_dir, body, key):
+        consumer = f"cargo:x-cargo|{out_dir}|{body}|[]|true|false"
+        (refs / name).write_text(
+            json.dumps({"lane": str(lane_path), "consumer": consumer, "action_key": key})
+        )
+
+    # A kernel cell links on i686-kernel; the body is still the i386 one.
+    ref(
+        "a.json",
+        lane,
+        "/tmp/vibeos/sdk/lib/rust/target/cell-link-v1-i386-15/i686-kernel/release/build/x/out",
+        "hid-rust",
+        "k1",
+    )
+    ref(
+        "b.json",
+        lane,
+        "/tmp/vibeos/sdk/lib/rust/target/cell-link-v1-amd64-14/x86_64-pc-windows-gnu/release/build/x/out",
+        "hid-rust",
+        "k2",
+    )
+    ref(
+        "c.json",
+        tmp_path / "other-lane",
+        "/tmp/vibeos/sdk/lib/rust/target/cell-link-v1-amd64-14/x/out",
+        "hid-rust",
+        "k3",
+    )
+    assert c.lane_actions(tmp_path / "store", lane) == {
+        ("i386", "hid-rust"): {"k1"},
+        ("amd64", "hid-rust"): {"k2"},
+    }
+    ref("d.json", lane, "/somewhere/else/out", "hid-rust", "k4")
+    with pytest.raises(c.StoreError):
+        c.lane_actions(tmp_path / "store", lane)
+
+
+def test_check_output_counts_a_crate_only_when_cargo_compiled_it():
+    import json
+
+    def art(pkg, kind):
+        return json.dumps(
+            {"reason": "compiler-artifact", "package_id": pkg, "target": {"kind": [kind]}}
+        )
+
+    def msg(pkg):
+        return json.dumps(
+            {
+                "reason": "compiler-message",
+                "package_id": pkg,
+                "message": json.loads(
+                    _diag("acpi-rust/src/osl.rs", 3, "dead_code", "function `f` is never used")
+                ),
+            }
+        )
+
+    out = "\n".join(
+        [
+            msg("path+file:///r/sdk/lib/rust/acpi-rust#0.1.0"),
+            art("path+file:///r/sdk/lib/rust/acpi-rust#0.1.0", "staticlib"),
+            art("path+file:///r/sdk/lib/rust/ntkrnl-sys#ntkrnl-sys@0.1.0", "lib"),
+            art("path+file:///r/sdk/lib/rust/other-rust#0.1.0", "custom-build"),
+            "not json",
+        ]
+    )
+    found, compiled = c.parse_check_output(out, {"acpi-rust", "ntkrnl-sys", "other-rust"})
+    assert compiled == {"acpi-rust", "ntkrnl-sys"}  # a build script is not the crate
+    assert [(s.path, s.lint) for s in found["acpi-rust"]] == [("acpi-rust/src/osl.rs", "dead_code")]
