@@ -602,6 +602,26 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
 
 ## Known bugs & flakes (live registry)
 
+- **arm64 FEX: every x64 guest that catches an exception jumped to pc 0 (FIXED on branch
+  wow64-amd64 2026-11-22, landing; fex lane).** Since `536a9761765` (OutputDebugStringA raises
+  `DBG_PRINTEXCEPTION_C` for real, which is correct), every arm64 FEX x64 ladder guest that
+  imports a DLL exited 0xc0000005. Red: `20261122-133824-aJpIbv`. Green at `37bf0962f85`,
+  before that merge: `20261121-210705-XwfSZ7`. Every catch ends in ReactOS's amd64
+  `RtlpRestoreContextInternal`, which reloads DS/ES/FS. FEX refused `mov fs` in 64-bit mode
+  (DecodeFailure), so no block was compiled, and the block linker handed the dispatcher host
+  address 0. Fixed in FEX's OpcodeDispatcher: the selector is stored and the base left alone,
+  as FEX's own hardware note says (vendor patch "64-bit segment selector loads"). **Gate gap,
+  owed (merge-integrator):** the gate builds arm64 without `VIBEOS_FEX=1`, so `ladder:arm64`
+  skipped and this landed green. A `ladder:arm64-fex` stage on its own `build-arm64-fex`, which
+  never skips, is agreed and owed; the integrator writes it after this fix lands.
+- **arm64: a new thread was killed as a stack overflow with its stack barely used (FIXED on
+  branch wow64-amd64 2026-11-22, landing; fex lane).** apc32 rung 5 under FEX, red since
+  2026-11-08. Building an exception or APC frame, KiDispatchException and KiInitializeUserApc
+  faulted the user frame in with one MmAccessFault per page, bottom first. A guard-page hit
+  commits the page but does not map it, so a frame landing on the guard page failed the
+  following MmIsAddressValid. Now `KiFaultInUserFrame` goes top down, retrying after a guard
+  hit (`20261122-121707-bQJnhZ` red, `20261122-130337-mKp7Sw` green).
+
 - **amd64-bios: boot went silent after netstack's TDI self-test timed out (open, 1 in 7,
   found 2026-11-08, fex lane).** In a full gate (`20261108-020815-xRELnn`, two CPUs, NVMe),
   `smoke:amd64-bios` logged `TDI op timed out - IRP still pending`, `CONNECT FAILED

@@ -1288,8 +1288,12 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
         _StoreContextGPR(OpSize::i16Bit, Src, offsetof(FEXCore::Core::CPUState, gs_idx));
         UpdatePrefixFromSegment(Src, FEXCore::X86Tables::DecodeFlags::FLAG_GS_PREFIX);
       } else {
-        LogMan::Msg::EFmt("We don't support modifying GS selector in 64bit mode!");
-        DecodeFailure = true;
+        // VIBEOS PATCH (64-bit segment selector loads): the selector only, the base untouched,
+        // which is what the comment above measured on hardware. A decode failure here compiles
+        // no block, and the block linker then hands the dispatcher a null host address: ReactOS's
+        // amd64 RtlpRestoreContextInternal reloads DS/ES/FS from the CONTEXT at the end of every
+        // user-mode unwind, so every x64 guest that caught an exception jumped to pc 0.
+        _StoreContextGPR(OpSize::i16Bit, Src, offsetof(FEXCore::Core::CPUState, gs_idx));
       }
       break;
     case FEXCore::X86State::REG_RSP: // FS
@@ -1298,8 +1302,12 @@ void OpDispatchBuilder::MOVSegOp(OpcodeArgs, bool ToSeg) {
         _StoreContextGPR(OpSize::i16Bit, Src, offsetof(FEXCore::Core::CPUState, fs_idx));
         UpdatePrefixFromSegment(Src, FEXCore::X86Tables::DecodeFlags::FLAG_FS_PREFIX);
       } else {
-        LogMan::Msg::EFmt("We don't support modifying FS selector in 64bit mode!");
-        DecodeFailure = true;
+        // VIBEOS PATCH (64-bit segment selector loads): the selector only, the base untouched,
+        // which is what the comment above measured on hardware. A decode failure here compiles
+        // no block, and the block linker then hands the dispatcher a null host address: ReactOS's
+        // amd64 RtlpRestoreContextInternal reloads DS/ES/FS from the CONTEXT at the end of every
+        // user-mode unwind, so every x64 guest that caught an exception jumped to pc 0.
+        _StoreContextGPR(OpSize::i16Bit, Src, offsetof(FEXCore::Core::CPUState, fs_idx));
       }
       break;
     default: UnimplementedOp(Op); return;
