@@ -1018,10 +1018,12 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   fastfat's `FatCommonCreateCallout` has the C's try/except (still unreachable below
   WINTHRESHOLD). Known left as-is: fastfat's oplock stand-ins (`FsRtlOplockBreakH`
   SUCCESS, `FsRtlCheckOplockEx` ignoring Flags: ntoskrnl stubs them at 0xA00+),
-  `KeAcquireSpinLockRaiseToDpc` in `rust_cohab_fat.c` (raises IRQL, takes no lock: UP-only),
   cdfs's `FsRtlIsLeadDbcsCharacter` stand-in (always FALSE, DBCS OEM code pages),
   `RtlOemStringToCountedUnicodeSize` (Length*2, SBCS-only), and the lost file/line in
-  `FatBugCheck`/`CdBugCheck` parameter 1.
+  `FatBugCheck`/`CdBugCheck` parameter 1. Fixed 2026-11-22: `rust_cohab_fat.c`'s
+  `KeAcquireSpinLockRaiseToDpc` stand-in took no lock, and on amd64 and arm64 the DDK's
+  KeAcquireSpinLock macro routed every fastfat spinlock through it, so none excluded another
+  CPU. It is now i386-only and calls the HAL's `KfAcquireSpinLock`.
 - **amd64 STATUS_NONEXISTENT_SECTOR in-page error, 0x1E during the boot WoW64 self-tests
   (open flake, seen once 2026-11-01, research).** hostapps `20261101-123017-7ue7skcb`:
   `[MM] Failed to page data in! st=c0000015 off=10000` while `apc32.exe` created threads,

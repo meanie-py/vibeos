@@ -28,6 +28,8 @@ from live in the docs below; this file holds only the lane's state.
   (`svcfail_log` in tripwire.rs, called from each arch's dispatcher).
 - The i386 `SPECIALPOOL=*` 0x0F was the PFN lock held across a pool free in
   `MmDeleteSectionAssociation`. `SPECIALPOOL=*` now boots on all three arches.
+- fastfat's spinlocks lock on amd64 and arm64: the C glue's `KeAcquireSpinLockRaiseToDpc`
+  stand-in, which only raised IRQL, had captured the DDK macro there.
 
 **Next, in order:**
 1. The amd64 in-page 0x1E (registry): an overnight soak gave 180/180 clean
