@@ -288,7 +288,10 @@ static void dump_thread_body(DWORD pid, DWORD tid)
         CloseHandle(snap);
     }
     SD_STAGE(1);
-    HANDLE th = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT, FALSE, tid);
+    /* THREAD_QUERY_INFORMATION too: our Wow64GetThreadContext finds a remote thread's TEB
+     * through ThreadBasicInformation (Windows reads the context in the kernel and needs only
+     * THREAD_GET_CONTEXT; see RtlWow64GetThreadContext). */
+    HANDLE th = OpenThread(THREAD_SUSPEND_RESUME | THREAD_GET_CONTEXT | THREAD_QUERY_INFORMATION, FALSE, tid);
     HANDLE ph = OpenProcess(PROCESS_VM_READ | PROCESS_QUERY_INFORMATION, FALSE, pid);
     if (!th || !ph) {
         SAY("  stuck pid=%lu tid=%lu: cannot open (thread=%p process=%p)\n", pid, tid, th, ph);

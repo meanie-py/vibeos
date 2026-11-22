@@ -241,6 +241,10 @@ extern "system" {
 /// header, both from the thread's own process. That area is current whenever the guest
 /// thread is stopped at a syscall or exception boundary (a suspended thread parked in a
 /// win32k call, which is what a sampler wants). Writes stay current-thread only.
+/// Diverges from Windows on access: the handle also needs THREAD_QUERY_(LIMITED_)INFORMATION
+/// (for the TEB address), where Windows reads the context in the kernel
+/// (`ThreadWow64Context`) and needs only THREAD_GET_CONTEXT. A GET_CONTEXT-only handle
+/// gets STATUS_ACCESS_DENIED, never another thread's context.
 unsafe fn wow64_remote_context(Thread: HANDLE, Out: *mut WOW64_CONTEXT) -> NTSTATUS {
     const THREAD_BASIC_INFORMATION_CLASS: ULONG = 0;
     const PROCESS_VM_READ_: ACCESS_MASK = 0x0010;

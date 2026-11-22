@@ -1088,6 +1088,7 @@ int main(void)
         if (!strncmp(line, "idle ", 5))
         {
             DWORD secs = (DWORD)atoi(line + 5);
+            ++total; /* an entry that ran: a list of only idles is not an empty list */
             emit("[APITEST-SWEEP] idle %lus\n", (unsigned long)secs);
             Sleep(secs * 1000u);
             DWORD hog = sd_report_process_cpu("idle", 12);
