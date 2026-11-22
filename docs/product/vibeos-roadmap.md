@@ -611,8 +611,19 @@ land; date every addition.** Source docs live in `docs/engineering/archive/`.
   `~/vibeos-flake-farm/fails/auto/20261108-024954-JKt07d-smoke-amd64-bios-HANG_TIMEOUT`.
   Next: a `farm` run of amd64-bios, to get a rate and a second sample.
 
-- **arm64: committed memory faults under concurrent system-process allocation (open,
-  intermittent, found 2026-11-08; owner: conformance lane since 2026-11-21, MM).** kmtest
+- **arm64: committed memory faults under concurrent system-process allocation (FIXED
+  2026-11-22, conformance lane: a TEST bug, not MM).** Root cause: `SystemProcessTestWorker`
+  tests the allocation status only in its `while` condition, after the loop body has already
+  run `CheckBufferReadWrite(Base, ...)` on every 10th index expecting success. The
+  allocation that hits `STATUS_COMMITMENT_LIMIT` (0xC000012D, how both workers end) left
+  `Base` NULL, so when it landed on a multiple of 10 the test wrote to and read from NULL:
+  exactly `.c:90`, `.c:76` and `Match = 0` at `.c:93`. All three failing serials show the
+  3 MiB thread ending at "Chunks allocated: 41" or 31 (failed at index 40 or 30); a passing
+  one shows 40 (failed at 39). Which index runs out depends on how the two threads
+  interleave their commit charges, hence the load dependence. It is arm64-only because
+  arm64's commit limit ends that thread inside the 50 checked chunks. The fix checks a
+  failed commit the way `StressTesting` already does, expecting the access violation.
+  Original entry: kmtest
   ZwAllocateVirtualMemory's `SystemProcessTestWorker` runs two system threads that allocate in
   the system process at the same time. One of them got STATUS_SUCCESS committing a chunk, then
   faulted with 0xC0000005 both writing it (`.c:90`) and reading it back (`.c:76`, `Match = 0`
