@@ -1,23 +1,43 @@
 # msvcrt / ucrtbase from pieces — lane plan
 
-## RESUME HERE (parked 2026-11-08, fleet wind-down)
+## RESUME HERE (parked 2026-11-22, Sunday wind-down)
 
-The lane's last stretch was sysfb PnP, not the CRT: `docs/engineering/sysfb-pnp-design.md` has
-steps 0-4 done and step 5 done on the Pi 5. Landed: `6b85d99aa5b` (user-mode device
-disable/enable, batch 158). Submitted: `4815295ad8b` (bench serial guard, `pi4 services
-serial-down`, sysfbprobe prints the PlugPlay checkpoint) in batch 170, which the integrator
-fixed forward with `46c6c469327` (ruff format on `tests/qemu/cli/pi4.py`).
+The lane's current stretch is sysfb PnP and, as of 11-22, the INSTALLED system, which no gate
+boots past Explorer: `docs/engineering/sysfb-pnp-design.md`, `tests/qemu/test_install.py`.
+Landed 11-21/22: `a3d73c0af8b` (sysfbprobe grades the root's Display class after pending
+installs drain), `4804d979d88` (setupapi `SetupDiSetClassInstallParamsA`,
+`SetupDiGetClassInstallParamsA/W`). Submitted 11-22: `ea53da3d775` (kernel: a zero-length user
+buffer is not probed; RegCopyTreeW failed 998 and services.exe EXITED on an installed system's
+first boot after setup), `39009c0c535` (userenv `LoadUserProfileW` read PROFILEINFOW by slot
+arithmetic and crashed services.exe starting Rpcss), and the parking commit after them (the
+opt-in persist stage below, sysfbprobe `persist`, umpnpmgr's restored failure prints).
+
 Owed, in order:
-1. The Pi 5 PlugPlay START_PENDING stall (roadmap bug registry): rebuild arm64 with
-   `VIBEOS_PAYLOAD=sysfbprobe` (the checkpoint print is not built yet) and `pi5 boot` until it
-   recurs; the checkpoint names the thread start `ServiceMain` stalled before.
-2. sysfb step 5 on the OptiPlex, once rpi-bringup's freeldr 1 GiB identity-map fix is on
-   master (the bench is theirs; ask first).
-3. The kernel-initiated `IopPrepareDeviceForRemoval` ordering, a reboot test of
-   CONFIGFLAG_DISABLED, and the `SetupDiSetClassInstallParamsA` stub (roadmap, "No device
-   could be disabled").
-4. Proposed to the user, not started: ruff on changed `.py` inside `vibeos-cli check`, so a
-   Python edit cannot reach the integrator without `check-tooling` (three bounces).
+1. **The CONFIGFLAG_DISABLED reboot test**, `VIBEOS_INSTALL_PERSIST=1 ./vibeos-cli
+   install-smoke --arch amd64` (opt-in until it passes). With the two fixes above the
+   installed system starts its services and PlugPlay, the probe runs from regtest.cmd, and
+   the sysfb nodes read installed -- but `CMP_WaitNoPendingInstallEvents` times out (258)
+   after 300 s (`/tmp/vibeos-cli/20261122-162502-XldEHN-install-smoke-amd64-uefi`).
+   umpnpmgr's DeviceInstallThread only signals no-pending inside its install loop, which waits
+   on `hInstallEvent`; outside setup that is set by `PNP_ReportLogOn`, the RPC userinit makes
+   through setupapi `CMP_Report_LogOn`. Nothing in the serial shows the logon report arriving.
+   The failure prints restored in `PNP_ReportLogOn`/`IsCallerInteractive` (rpcserver.rs) did
+   not print either -- first establish whether umpnpmgr's DPRINT1 reaches serial at all, then
+   whether userinit calls `NotifyLogon` on an installed logon, then the interactive-SID check
+   (the livecd skips it: `g_IsLiveMedium`). Iterate WITHOUT text setup: a stage-1 disk is kept at
+   `~/vibeos-install-disks/stage1-amd64-20261122.qcow2` (text setup's result, 11-22 tree;
+   pass a COPY, the test overwrites it) and run with
+   `VIBEOS_INSTALL_STAGE1_DISK=<copy> VIBEOS_INSTALL_REFRESH=ntoskrnl.exe,userenv.dll,umpnpmgr.dll`
+   (refresh every binary you changed: the disk keeps the build it was installed from). After a
+   probe `.c` edit, a warm `build --arch amd64` first (staleness). ~9 min per iteration.
+2. The Pi 5 PlugPlay START_PENDING stall (roadmap bug registry): 1 in 17 boots; the probe
+   prints the checkpoint, so the next stall names where `ServiceMain` stopped.
+3. sysfb step 5 on the OptiPlex, once rpi-bringup's freeldr fix is on master (their bench; ask).
+4. The kernel-initiated `IopPrepareDeviceForRemoval` ordering (roadmap, "No device could be
+   disabled").
+5. Proposed to the user, not started: ruff on changed `.py` inside `vibeos-cli check`. Also
+   seen 11-22: `check`'s reconfigure stage reported build-i386 fresh while its build.ninja was
+   older than three CMakeLists, and the whole scanner aborted (SCANNER_ERROR).
 The Pi 4 sysfb check is owed but low value (same root-instance GOP path).
 
 > **Lane:** `msvcrt-homebrew` · **Status:** the DLL is done; the debt is GRADING (2026-08-07) · **Size:** M–L

@@ -567,13 +567,13 @@ unsafe extern "C" fn IsCallerInteractive(hBinding: handle_t) -> BOOL {
         &mut pInteractiveSid,
     ) == 0
     {
-        // DPRINT removed
+        DPRINT1!("AllocateAndInitializeSid failed\n");
         return (FALSE) as i32;
     }
 
     RpcStatus = RpcImpersonateClient(hBinding);
     if RpcStatus != RPC_S_OK {
-        // DPRINT removed
+        DPRINT1!("RpcImpersonateClient failed (Status 0x%08lx)\n", RpcStatus);
     } else {
         if OpenThreadToken(
             GetCurrentThread(),
@@ -680,13 +680,16 @@ pub unsafe extern "system" fn PNP_ReportLogOn(
 
     'cleanup: loop {
         if (g_IsLiveMedium == (FALSE) as i32) && (IsCallerInteractive(hBinding) == (FALSE) as i32) {
+            // Not in the C, which refuses silently; without it a logon that never starts
+            // device installation (no CMP_WaitNoPendingInstallEvents ever returns) is mute.
+            DPRINT1!("PNP_ReportLogOn: caller (pid %lu) is not interactive\n", ProcessId);
             break 'cleanup;
         }
 
         hProcess = OpenProcess(PROCESS_ALL_ACCESS, (TRUE) as i32, ProcessId);
 
         if hProcess.is_null() {
-            // DPRINT removed
+            DPRINT1!("OpenProcess failed with error %u\n", GetLastError());
             break 'cleanup;
         }
 
@@ -701,7 +704,7 @@ pub unsafe extern "system" fn PNP_ReportLogOn(
             core::ptr::addr_of_mut!(hUserToken),
         ) == 0
         {
-            // DPRINT removed
+            DPRINT1!("OpenProcessToken failed with error %u\n", GetLastError());
             break 'cleanup;
         }
 

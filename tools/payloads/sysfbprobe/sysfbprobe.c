@@ -13,6 +13,10 @@
  *           answered "not implemented" (nobody refused) or, as before, a silent success.
  * After each step the screen must still round-trip a pixel, so a refusal that loses the
  * framebuffer mapping fails here too.
+ * `sysfbprobe persist` (install smoke only: an installed disk is the one place the registry
+ * outlives a boot) checks that a Device Manager disable survives a reboot. First run: disable
+ * the idle root instance, register itself under Run, reboot. Second run: the root must come
+ * up stopped with CM_PROB_DISABLED and CONFIGFLAG_DISABLED still set; enable it, clean up.
  * Verdict: "[SYSFBPROBE] done VERDICT=PASS|FAIL". */
 #include <windows.h>
 #include <setupapi.h>
@@ -109,6 +113,7 @@ static void enable_shutdown_privilege(void)
 
 static DEVINST root, pci;
 static char root_id[MAX_DEVICE_ID_LEN];
+static int expect_root_disabled; /* persist mode, second boot: the root must NOT be started */
 
 /* Every device node whose service is sysfb, found by walking the tree with CM_Get_Child /
  * CM_Get_Sibling. (SetupDiGetClassDevs(DIGCF_ALLCLASSES) failed with error 31 here.) */
@@ -141,7 +146,7 @@ static void visit(DEVINST dev)
         if (_strnicmp(id, "ROOT\\SYSFB\\", 11) == 0) {
             root = dev;
             strcpy(root_id, id);
-            CHECK(up, "root instance %s not started (problem %lu)\n", id, problem);
+            CHECK(up || expect_root_disabled, "root instance %s not started (problem %lu)\n", id, problem);
             CHECK(_stricmp(klass, DISPLAY_CLASS) == 0, "root instance %s is in class %s, not Display\n",
                   id, klass[0] ? klass : "(none)");
         } else if (_strnicmp(id, "PCI\\", 4) == 0) {
@@ -159,15 +164,23 @@ static void visit(DEVINST dev)
  * manager starts after the Startup folder has already run. */
 static void wait_plugplay(void)
 {
-    SC_HANDLE scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT);
-    SC_HANDLE svc = scm ? OpenServiceA(scm, "PlugPlay", SERVICE_QUERY_STATUS) : NULL;
+    /* On an installed system RunOnce starts the probe as Explorer comes up, before the
+     * service manager answers: OpenSCManager itself fails then, so retry the opens too. */
+    SC_HANDLE scm = NULL, svc = NULL;
     SERVICE_STATUS st = { 0 };
+    DWORD err = 0;
     int i;
-    for (i = 0; svc && i < 600; i++) {
-        if (QueryServiceStatus(svc, &st) && st.dwCurrentState == SERVICE_RUNNING)
+    for (i = 0; i < 600; i++) {
+        if (!scm && !(scm = OpenSCManagerA(NULL, NULL, SC_MANAGER_CONNECT)))
+            err = GetLastError();
+        if (scm && !svc && !(svc = OpenServiceA(scm, "PlugPlay", SERVICE_QUERY_STATUS)))
+            err = GetLastError();
+        if (svc && QueryServiceStatus(svc, &st) && st.dwCurrentState == SERVICE_RUNNING)
             break;
         Sleep(500);
     }
+    if (!svc)
+        SAY("could not open the PlugPlay service (scm=%d): error %lu\n", scm != NULL, err);
     /* The checkpoint says how far umpnpmgr's ServiceMain got: 1, 2 and 3 are reported
      * before it creates its event, RPC and device-install threads, then RUNNING. */
     SAY("PlugPlay service state %lu checkpoint %lu after %d.%d s\n", st.dwCurrentState,
@@ -276,8 +289,85 @@ static void cycle_root(void)
     check_screen("root enabled");
 }
 
-int main(void)
+/* The persist test's state lives in a file beside the probe, and its second run is started
+ * from Run: both are written before a clean reboot, which is when they reach the disk. */
+static const char RUN_KEY[] = "Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+static const char RUN_VALUE[] = "sysfbpersist";
+
+static int persist(void)
 {
+    char self[MAX_PATH], state[MAX_PATH + 16], cmd[MAX_PATH + 16];
+    GetModuleFileNameA(NULL, self, sizeof(self));
+    snprintf(state, sizeof(state), "%s.persist", self);
+    snprintf(cmd, sizeof(cmd), "\"%s\" persist", self);
+    int second = GetFileAttributesA(state) != INVALID_FILE_ATTRIBUTES;
+    expect_root_disabled = second;
+
+    wait_plugplay();
+    wait_installs();
+    DEVINST top;
+    CHECK(CM_Locate_DevNodeA(&top, NULL, CM_LOCATE_DEVNODE_NORMAL) == CR_SUCCESS, "no root devnode\n");
+    walk(top);
+    /* Only an idle root can be disabled under a running desktop: the PCI instance must own it. */
+    CHECK(root && pci, "persist needs an idle root instance beside a PCI owner (root=%d pci=%d)\n",
+          root != 0, pci != 0);
+    ULONG problem = 0;
+    int up = root ? node_started(root, &problem) : 0;
+    DWORD flags = root ? config_flags(root_id) : 0;
+    SAY("persist %s boot: root started=%d problem=%lu ConfigFlags=0x%lx\n",
+        second ? "second" : "first", up, problem, flags);
+
+    if (!second && !failures) {
+        CHECK(up && !(flags & CONFIGFLAG_DISABLED), "root not started and enabled before the test\n");
+        CHECK(change_state(root_id, DICS_DISABLE), "Device Manager disable of %s failed\n", root_id);
+        up = node_started(root, &problem);
+        flags = config_flags(root_id);
+        CHECK(!up && problem == CM_PROB_DISABLED && (flags & CONFIGFLAG_DISABLED),
+              "disable: started=%d problem=%lu ConfigFlags=0x%lx\n", up, problem, flags);
+        HKEY run;
+        CHECK(RegCreateKeyExA(HKEY_LOCAL_MACHINE, RUN_KEY, 0, NULL, 0, KEY_SET_VALUE, NULL, &run, NULL) ==
+                      ERROR_SUCCESS &&
+                  RegSetValueExA(run, RUN_VALUE, 0, REG_SZ, (const BYTE *)cmd, (DWORD)strlen(cmd) + 1) ==
+                      ERROR_SUCCESS,
+              "registering %s under Run failed\n", cmd);
+        HANDLE f = CreateFileA(state, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+        CHECK(f != INVALID_HANDLE_VALUE, "creating %s failed: %lu\n", state, GetLastError());
+        if (f != INVALID_HANDLE_VALUE)
+            CloseHandle(f);
+        if (!failures) {
+            enable_shutdown_privilege();
+            SAY("persist: root disabled, rebooting\n");
+            if (ExitWindowsEx(EWX_REBOOT | EWX_FORCE, SHTDN_REASON_MAJOR_OTHER | SHTDN_REASON_FLAG_PLANNED))
+                return 0; /* the verdict comes from the second run */
+            SAY("FAIL ExitWindowsEx: %lu\n", GetLastError());
+            failures++;
+        }
+    } else if (second) {
+        /* What a reboot must preserve: the disable Device Manager persisted. */
+        CHECK(!up && problem == CM_PROB_DISABLED, "after the reboot: started=%d problem=%lu, expected CM_PROB_DISABLED\n",
+              up, problem);
+        CHECK(flags & CONFIGFLAG_DISABLED, "after the reboot: ConfigFlags=0x%lx lost CONFIGFLAG_DISABLED\n", flags);
+        CHECK(change_state(root_id, DICS_ENABLE), "Device Manager enable of %s failed\n", root_id);
+        up = node_started(root, &problem);
+        flags = config_flags(root_id);
+        SAY("persist: root enabled: started=%d problem=%lu ConfigFlags=0x%lx\n", up, problem, flags);
+        CHECK(up && problem == 0 && !(flags & CONFIGFLAG_DISABLED), "re-enable after the reboot failed\n");
+        check_screen("persist");
+        HKEY run;
+        if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, RUN_KEY, 0, KEY_SET_VALUE, &run) == ERROR_SUCCESS) {
+            RegDeleteValueA(run, RUN_VALUE);
+            RegCloseKey(run);
+        }
+        DeleteFileA(state);
+    }
+    SAY("done VERDICT=%s (%d failures)\n", failures ? "FAIL" : "PASS", failures);
+    return failures ? 1 : 0;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc > 1 && strcmp(argv[1], "persist") == 0)
+        return persist();
     wait_plugplay();
     wait_installs();
 
