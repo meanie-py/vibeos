@@ -2122,7 +2122,17 @@ pub fn model(root: &Path, target: &str) -> Result<super::Cell> {
     if facts["unicode"] == true {
         cell.rc_defines = vec!["UNICODE".into(), "_UNICODE".into()];
     }
-    if kind == "Win32Exe" && cell.msvcrtex.is_none() && !subsys.starts_with("native") {
+    // An exe whose cmake link carries no msvcrtex at all takes its entry from the body
+    // (svchost: svchost-rust defines wmainCRTStartup). Refused only when cmake linked a CRT
+    // startup the cell did not recognise.
+    if kind == "Win32Exe"
+        && cell.msvcrtex.is_none()
+        && !subsys.starts_with("native")
+        && links
+            .values()
+            .flat_map(|l| &l.libs)
+            .any(|l| l.contains("msvcrtex"))
+    {
         return Err(Error::new(format!(
             "{target}: exe without a msvcrtex CRT startup"
         )));

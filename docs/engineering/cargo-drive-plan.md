@@ -614,8 +614,12 @@ extends it from the boot spine to every fully-Rust module.
      `ModuleKind::Win32Dll { subsystem: Some("native:5.01") }`, not as a kernel kind.
      setuplib, the fourth, builds no DLL in this configuration (no cmake output to prove
      against).
+   - **2026-11-22: svchost converted**, EQUIVALENT ×3. Its cmake link carries no
+     msvcrtex: svchost-rust defines the entry (`wmainCRTStartup`). "exe without a msvcrtex
+     CRT startup" now refuses only when cmake linked an msvcrtex archive the cell did not
+     recognise.
    - **RESUME HERE (2026-11-08, fleet pause).**
-     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer, filebrowser, dbghelp, libtirpc, rapps.com, libtiff, glu32, ufat, ufatx and ucdfs followed, ratchet 17.)*
+     - *(2026-11-21: the 11-08 batch landed; shdocvw, shlwapi, browseui, rshell, explorer, filebrowser, dbghelp, libtirpc, rapps.com, libtiff, glu32, ufat, ufatx, ucdfs and svchost followed, ratchet 16.)*
      - The cmake_linked_modules ratchet is at **31**. This week's 24 cells are queued in the
        integrator's combined batch 169+170 on `cells-dotted` 0fa7e73bb5c, which includes
        cells-fusion and cells-exports: the five export holds, fusion ×3, rpcrt4, uniata and
